@@ -1,0 +1,70 @@
+name: Lamborghini Huracan
+
+engine:
+  max_rpm: 9000
+  idle_rpm: 900
+  base_torque_nm: 250
+  peak_rpm: 4000
+  max_power_kw: 480
+  rotational_inertia: 0.35
+  efficiency: 0.92
+
+  bsfc: 0.24
+  heat_fraction: 0.65
+
+  rpm_response: 2.6
+  shift_rpm_drop_rate: 3.5
+  torque_curve_min: 0.25
+  limiter_start_ratio: 0.97
+  limiter_torque_factor: 0.3
+
+
+
+
+
+
+gearbox:
+  final_drive: 4.06
+  gears: [3.91, 2.60, 1.91, 1.42, 1.14, 0.93, 0.77]
+  upshift_rpm: 8200
+  downshift_rpm: 2500
+
+  shift_delay: 0.4
+
+vehicle:
+  mass_kg: 1450
+  drag_coefficient: 0.14
+  rolling_resistance: 0.006
+  frontal_area: 2.1
+  wheel_radius_m: 0.34
+
+  drivetrain_efficiency: 0.92
+  brake_force_max: 12000
+  load_scale: 6000
+
+
+
+thermals:
+  thermostat_open_temp: 88
+  fan_on_temp: 98
+  fan_off_temp: 92
+
+  airflow_coeff: 0.02
+  cooling_coeff: 0.02
+  heat_to_coolant_ratio: 0.8
+
+  oil_response_rate: 0.05
+  thermal_mass: 120
+  
+
+limits:
+  redline_rpm: 8800
+
+
+driver:
+  ramp_time: 5.0
+  cruise_throttle: 0.7
+  cruise_time: 10.0
+  decel_time: 5.0
+  final_throttle: 0.3
+  driver_style: "normal"
