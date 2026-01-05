@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List
 
 @dataclass
-class EngineConfig:
+class EngineSpecification:
     max_rpm: float
     idle_rpm: float
     base_torque_nm: float
@@ -22,7 +22,7 @@ class EngineConfig:
 
 
 @dataclass
-class GearboxConfig:
+class GearboxSpecification:
     final_drive: float
     gears: List[float]
     upshift_rpm: float
@@ -31,7 +31,18 @@ class GearboxConfig:
 
 
 @dataclass
-class VehicleConfig:
+class WearSpecification:
+    temp_threshold: float
+    thermal_stress_factor: float
+    load_stress_factor: float
+    rpm_threshold: float
+    rpm_stress_factor: float
+    cooling_degradation_scale: float
+    torque_degradation_scale: float
+
+
+@dataclass
+class VehicleSpecification:
     mass_kg: float
     drag_coefficient: float
     rolling_resistance: float
@@ -43,7 +54,7 @@ class VehicleConfig:
 
 
 @dataclass
-class ThermalConfig:
+class ThermalSpecification:
     thermostat_open_temp: float
     fan_on_temp: float
     fan_off_temp: float
@@ -55,7 +66,7 @@ class ThermalConfig:
     thermal_mass: float
 
 @dataclass
-class DriverConfig:
+class DriverSpecification:
     ramp_time: float
     cruise_throttle: float
     cruise_time: float
@@ -65,10 +76,16 @@ class DriverConfig:
 
 
 @dataclass
-class CarConfig:
+class CarSpecification:
     name: str
-    engine: EngineConfig
-    gearbox: GearboxConfig
-    vehicle: VehicleConfig
-    thermal: ThermalConfig
-    driver: DriverConfig
+    engine: EngineSpecification
+    gearbox: GearboxSpecification
+    vehicle: VehicleSpecification
+    thermal: ThermalSpecification
+
+
+
+@dataclass
+class EnvironmentSpecification:
+    ambient_temp: float
+    road_incline: float

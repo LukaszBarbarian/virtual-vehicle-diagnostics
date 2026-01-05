@@ -1,25 +1,26 @@
-from modules.driver import DriverModule, DriverState
-from modules.engine import EngineModule, EngineState
-from modules.gearbox import GearboxModule, GearboxState
-from modules.vehicle import VehicleModule, VehicleState
-from modules.thermals import ThermalModule, ThermalState
+from simulator.modules.car import Car
+from simulator.modules.engine import EngineModule, EngineState
+from simulator.modules.gearbox import GearboxModule, GearboxState
+from simulator.modules.vehicle import VehicleModule, VehicleState
+from simulator.modules.thermals import ThermalModule, ThermalState
+from simulator.core.models.model_specification import CarSpecification
 
 
 class CarBuilder:
     @staticmethod
-    def build(config):
-
+    def build(car_spec: CarSpecification) -> Car:
+        
         # ================= ENGINE =================
         engine = EngineModule(
             EngineState(
                 engine_rpm=0.0,
                 engine_temp_c=20.0,
                 oil_temp_c=20.0,
-                efficiency=config.engine.efficiency,
-                rotational_inertia=config.engine.rotational_inertia
+                efficiency=car_spec.engine.efficiency,
+                rotational_inertia=car_spec.engine.rotational_inertia
             )
         )
-        engine.apply_config(config.engine)
+        engine.apply_config(car_spec.engine)
 
         # ================= GEARBOX =================
         gearbox = GearboxModule(
@@ -30,18 +31,18 @@ class CarBuilder:
                 shift_event=False
             )
         )
-        gearbox.apply_config(config.gearbox)
+        gearbox.apply_config(car_spec.gearbox)
 
         # ================= VEHICLE =================
         vehicle = VehicleModule(
             VehicleState(
                 speed_kmh=0.0,
                 acc_mps2=0.0,
-                mass_kg=config.vehicle.mass_kg,
+                mass_kg=car_spec.vehicle.mass_kg,
                 load=0.0
             )
         )
-        vehicle.apply_config(config.vehicle)
+        vehicle.apply_config(car_spec.vehicle)
 
         # ================= THERMALS =================
         thermals = ThermalModule(
@@ -49,13 +50,9 @@ class CarBuilder:
                 coolant_temp_c=20.0,
                 oil_temp_c=20.0,
                 fan_active=False,
-                thermal_mass=config.thermal.thermal_mass
+                thermal_mass=car_spec.thermal.thermal_mass
             )
         )
-        thermals.apply_config(config.thermal)
+        thermals.apply_config(car_spec.thermal)
 
-        # ================= DRIVER =================
-        driver = DriverModule()
-        driver.apply_config(config.driver)
-
-        return engine, gearbox, vehicle, thermals, driver
+        return Car(engine, gearbox, thermals, vehicle)

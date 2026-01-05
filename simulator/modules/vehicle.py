@@ -1,7 +1,7 @@
 # vehicle.py
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
-from core.config_models import VehicleConfig
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.models.model_specification import VehicleSpecification
 
 @dataclass
 class VehicleState(BaseState):
@@ -32,7 +32,7 @@ class VehicleModule(BaseModule):
 
 
 
-    def apply_config(self, cfg: VehicleConfig):
+    def apply_config(self, cfg: VehicleSpecification):
         self.state.mass_kg = cfg.mass_kg
         self.drag_coefficient = cfg.drag_coefficient
         self.rolling_resistance = cfg.rolling_resistance

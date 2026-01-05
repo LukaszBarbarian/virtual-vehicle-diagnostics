@@ -1,7 +1,7 @@
 # gearbox.py
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
-from core.config_models import GearboxConfig
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.models.model_specification import GearboxSpecification
 
 @dataclass
 class GearboxState(BaseState):
@@ -42,7 +42,7 @@ class GearboxModule(BaseModule):
         self.engine_max_rpm = 9000   # ustawiane z profilu w main.py
         self._target_gear = initial_state.current_gear
 
-    def apply_config(self, cfg: GearboxConfig):
+    def apply_config(self, cfg: GearboxSpecification):
         self.final_drive = cfg.final_drive
         self.gear_ratios = {i+1: g for i, g in enumerate(cfg.gears)}
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
-from core.config_models import DriverConfig
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.models.model_specification import DriverSpecification
 
 @dataclass
 class DriverState(BaseState):
@@ -22,12 +22,13 @@ class DriverOutput(BaseOutput):
 
 
 class DriverModule(BaseModule):
-    def __init__(self):
-        self.state = DriverState(0.0, 0.0, 0.0, "normal")
+    def __init__(self, initial_state: DriverState):
+        self.state = initial_state
         self.output = None
         self.t = 0.0
+        self.input = None
 
-    def apply_config(self, cfg: DriverConfig):
+    def apply_config(self, cfg: DriverSpecification):
         self.ramp_time = cfg.ramp_time
         self.cruise_throttle = cfg.cruise_throttle
         self.cruise_time = cfg.cruise_time

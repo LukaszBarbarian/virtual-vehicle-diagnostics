@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
 
 @dataclass
 class WearState(BaseState):
@@ -27,24 +27,31 @@ class WearModule(BaseModule):
         self.input = None
         self.output = None
 
-    def apply_config(self, config):
-        return super().apply_config(config)
+    def apply_config(self, cfg):
+        self.temp_threshold = cfg.temp_threshold
+        self.thermal_stress_factor = cfg.thermal_stress_factor
+        self.load_stress_factor = cfg.load_stress_factor
+        self.rpm_threshold = cfg.rpm_threshold
+        self.rpm_stress_factor = cfg.rpm_stress_factor
+        self.cooling_degradation_scale = cfg.cooling_degradation_scale
+        self.torque_degradation_scale = cfg.torque_degradation_scale
 
     def update(self, dt: float):
+        if self.input is None:
+            return
+
         i = self.input
         s = self.state
 
-        # zmniejszone współczynniki, żeby wear rosło wolniej
-        thermal_stress = max(0.0, i.engine_temp_c - 95.0) * 0.0002
-        load_stress = i.load * 0.0001
-        rpm_stress = max(0.0, i.engine_rpm - 4500.0) * 0.000001
+        thermal_stress = max(0.0, i.engine_temp_c - self.temp_threshold) * self.thermal_stress_factor
+        load_stress    = i.load * self.load_stress_factor
+        rpm_stress     = max(0.0, i.engine_rpm - self.rpm_threshold) * self.rpm_stress_factor
 
         s.engine_wear += (thermal_stress + load_stress + rpm_stress) * dt
         s.engine_wear = min(1.0, s.engine_wear)
 
-        # degradacja chłodzenia i momentu
-        s.cooling_efficiency_loss = s.engine_wear * 0.4
-        s.torque_loss_factor = s.engine_wear * 0.35
+        s.cooling_efficiency_loss = s.engine_wear * self.cooling_degradation_scale
+        s.torque_loss_factor      = s.engine_wear * self.torque_degradation_scale
 
         self.output = WearOutput(
             cooling_efficiency=1.0 - s.cooling_efficiency_loss,

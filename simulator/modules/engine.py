@@ -1,9 +1,9 @@
 # engine.py
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
 import math
 
-from core.config_models import EngineConfig
+from simulator.core.models.model_specification import EngineSpecification
 
 @dataclass
 class EngineState(BaseState):
@@ -50,7 +50,7 @@ class EngineModule(BaseModule):
         self.max_power_kw = 480.0   # <-- NOWE (Huracan ≈ 480 kW)
 
 
-    def apply_config(self, cfg: EngineConfig):
+    def apply_config(self, cfg: EngineSpecification):
         self.max_rpm = cfg.max_rpm
         self.idle_rpm = cfg.idle_rpm
         self.base_torque = cfg.base_torque_nm

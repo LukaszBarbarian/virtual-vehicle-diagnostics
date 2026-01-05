@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from core.base import BaseModule, BaseState, BaseInput, BaseOutput
-from core.config_models import ThermalConfig
+from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
+from simulator.core.models.model_specification import ThermalSpecification
 
 @dataclass
 class ThermalState(BaseState):
@@ -29,7 +29,7 @@ class ThermalModule(BaseModule):
         self.input = None
         self.output = None
 
-    def apply_config(self, cfg: ThermalConfig):
+    def apply_config(self, cfg: ThermalSpecification):
         self.thermostat_open_temp = cfg.thermostat_open_temp
         self.fan_on_temp = cfg.fan_on_temp
         self.fan_off_temp = cfg.fan_off_temp

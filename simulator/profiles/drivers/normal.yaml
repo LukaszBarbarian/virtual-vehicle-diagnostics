@@ -1,0 +1,6 @@
+ramp_time: 5.0
+cruise_throttle: 0.7
+cruise_time: 10.0
+decel_time: 5.0
+final_throttle: 0.3
+driver_style: "normal"
