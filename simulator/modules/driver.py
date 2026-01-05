@@ -27,6 +27,8 @@ class DriverModule(BaseModule):
         self.output = None
         self.t = 0.0
         self.input = None
+        self.cruise_throttle = 0.0
+
 
     def apply_config(self, cfg: DriverSpecification):
         self.ramp_time = cfg.ramp_time

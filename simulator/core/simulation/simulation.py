@@ -37,6 +37,7 @@ class Simulation:
     def init(self):
         self.init_state()
 
+
     def init_state(self):
         self.time = 0.0
         self.step_count = 0
@@ -54,7 +55,7 @@ class Simulation:
         
         driver.input = DriverInput(
             engine_rpm=engine.state.engine_rpm,
-            max_rpm=engine.max_rpm
+            max_rpm=engine.max_rpm,
         )
 
         # === DRIVER ===
@@ -123,8 +124,6 @@ class Simulation:
         wear     = self.wear
         driver   = self.driver
 
-        self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
-
         raw = RawSimulationState(
             time=self.time,
             step=self.step_count,
@@ -137,6 +136,8 @@ class Simulation:
                 "driver": vars(self.driver.state),
             }
         )
+
+        self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
 
         self.print_state()
         self.publish(dt, raw)

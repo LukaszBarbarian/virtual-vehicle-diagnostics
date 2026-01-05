@@ -37,7 +37,7 @@ class GearboxModule(BaseModule):
 
         self.shift_timer = 0.0
         self.shift_delay = 0.4
-        self.shift_cooldown = 0.0
+        self.shift_cooldown = 0.3
 
         self.engine_max_rpm = 9000   # ustawiane z profilu w main.py
         self._target_gear = initial_state.current_gear

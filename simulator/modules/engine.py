@@ -90,6 +90,7 @@ class EngineModule(BaseModule):
 
         idle_rpm = self.idle_rpm
         max_rpm = self.max_rpm
+        
 
         if i.clutch_factor < 0.5:
             # silnik chwilowo odciążony
