@@ -24,18 +24,22 @@ class EngineInput(BaseInput):
     cooling_efficiency: float
     torque_loss_factor: float
     clutch_factor: float
-    gear_ratio_total: float 
+    gear_ratio_total: float
     vehicle_mass_kg: float
     vehicle_acc_mps2: float
     wheel_radius_m: float = 0.34
 
+
+
 @dataclass
 class EngineOutput(BaseOutput):
     torque_nm: float
+    wheel_force_n: float   # ⬅️ KLUCZOWE
     fuel_rate_lph: float
     heat_kw: float
     engine_rpm: float
     fuel_l_per_100km: float
+
 
 class EngineModule(BaseModule):
     def __init__(self, initial_state: EngineState):
@@ -43,18 +47,18 @@ class EngineModule(BaseModule):
         self.input = None
         self.output = None
 
-        # z profilu auta
+        # wartości domyślne (ustawiane w apply_config)
         self.max_rpm = 9000.0
         self.base_torque = 250.0
         self.peak_rpm = 4000.0
-        self.max_power_kw = 480.0   # <-- NOWE (Huracan ≈ 480 kW)
-
+        self.max_power_kw = 480.0
 
     def apply_config(self, cfg: EngineSpecification):
         self.max_rpm = cfg.max_rpm
         self.idle_rpm = cfg.idle_rpm
         self.base_torque = cfg.base_torque_nm
-        self.peak_rpm = cfg.peak_rpm
+        self.peak_rpm = 7500
+
         self.max_power_kw = cfg.max_power_kw
         self.state.rotational_inertia = cfg.rotational_inertia
         self.state.efficiency = cfg.efficiency
@@ -69,16 +73,11 @@ class EngineModule(BaseModule):
         self.limiter_torque_factor = cfg.limiter_torque_factor
 
     def _efficiency_map(self, rpm: float, load: float):
-        # rpm_ratio: 0..1
         rpm_ratio = rpm / self.max_rpm
-
-        # charakterystyka typowego silnika V10
-        # najlepsza sprawność: ~40–70% RPM, średnie obciążenie
         eff_rpm = math.exp(-((rpm_ratio - 0.55) ** 2) / 0.05)
         eff_load = math.exp(-((load - 0.6) ** 2) / 0.08)
-
+        # sprawność zależy od obrotów i obciążenia
         return 0.55 + 0.45 * eff_rpm * eff_load
-
 
     def _rpm_from_wheels(self, vehicle_speed_kmh: float, wheel_radius_m: float):
         v_mps = vehicle_speed_kmh / 3.6
@@ -90,87 +89,107 @@ class EngineModule(BaseModule):
 
         idle_rpm = self.idle_rpm
         max_rpm = self.max_rpm
-        
 
+        # =========================
+        # SPRZĘGŁO ROZŁĄCZONE
+        # =========================
         if i.clutch_factor < 0.5:
-            # silnik chwilowo odciążony
-            s.engine_rpm += (idle_rpm - s.engine_rpm) * self.shift_rpm_drop_rate * dt
-            s.fuel_rate_lph *= 0.3
-            s.fuel_l_per_100km *= 0.3
+            decay = self.shift_rpm_drop_rate * dt
+            s.engine_rpm *= max(0.0, 1.0 - decay)
+
+            if s.engine_rpm < idle_rpm:
+                s.engine_rpm = idle_rpm
+
             self.output = EngineOutput(
                 torque_nm=0.0,
-                fuel_rate_lph=s.fuel_rate_lph,
-                fuel_l_per_100km=s.fuel_l_per_100km,
+                wheel_force_n=0.0,
+                fuel_rate_lph=s.fuel_rate_lph * 0.4,
                 heat_kw=0.0,
-            engine_rpm=s.engine_rpm
+                engine_rpm=s.engine_rpm,
+                fuel_l_per_100km=s.fuel_l_per_100km
             )
             return
 
-
-
-        # === RPM z napędu ===
+        # =========================
+        # RPM Z KÓŁ
+        # =========================
         wheel_rpm = self._rpm_from_wheels(i.vehicle_speed, i.wheel_radius_m)
+        wheel_target_rpm = (
+            wheel_rpm * i.gear_ratio_total if i.current_gear > 0 else idle_rpm
+        )
 
-        if i.current_gear > 0 and i.clutch_factor > 0 and i.vehicle_speed > 0.5:
-            target_rpm = wheel_rpm * i.gear_ratio_total
-        else:
-            target_rpm = idle_rpm + i.throttle * (max_rpm - idle_rpm)
+        target_rpm = max(idle_rpm, wheel_target_rpm)
 
-        # bezwładność
         alpha = min(1.0, self.rpm_response * dt)
-        s.engine_rpm += (target_rpm - s.engine_rpm) * alpha
+        delta = target_rpm - s.engine_rpm
+        max_delta = 3000.0 * dt
+        delta = max(-max_delta, min(max_delta, delta))
+        s.engine_rpm += delta * alpha
 
-        s.engine_rpm = max(idle_rpm, min(max_rpm, s.engine_rpm))
-
-        # === KRZYWA MOMENTU ===
+        # =========================
+        # KRZYWA MOMENTU
+        # =========================
         x = s.engine_rpm / max(1.0, self.peak_rpm)
         torque_curve = max(self.torque_curve_min, 1.0 - (x - 1.0) ** 2)
+
         load = self.vehicle.state.load if hasattr(self, "vehicle") else 0.5
         map_eff = self._efficiency_map(s.engine_rpm, load)
         effective_eff = map_eff * (1.0 - i.torque_loss_factor)
 
-        combustion_torque = self.base_torque * torque_curve * i.throttle * effective_eff
+        # =========================
+        # OGRANICZENIE MOCĄ (GAZ)
+        # =========================
+        available_power_kw = self.max_power_kw * i.throttle
+        omega = max(1e-3, s.engine_rpm * 2.0 * math.pi / 60.0)
+        power_limited_torque = (available_power_kw * 1000.0) / omega
 
-        # soft limiter
+        raw_engine_torque = min(
+            self.base_torque * torque_curve,
+            power_limited_torque
+        ) * effective_eff
+
+        # =========================
+        # 🔑 TŁUMIENIE MOMENTU (KLUCZ)
+        # =========================
+        if not hasattr(s, "engine_torque_filtered"):
+            s.engine_torque_filtered = raw_engine_torque
+
+        s.engine_torque_filtered += (
+            raw_engine_torque - s.engine_torque_filtered
+        ) * 0.15
+
+        engine_torque = s.engine_torque_filtered
+
+        # limiter obrotów
         if s.engine_rpm > max_rpm * self.limiter_start_ratio:
-            combustion_torque *= self.limiter_torque_factor
+            engine_torque *= self.limiter_torque_factor
 
+        drive_torque = engine_torque * i.gear_ratio_total * i.clutch_factor
+        wheel_force = drive_torque / max(0.1, i.wheel_radius_m)
 
-        # === SKALOWANIE MOCY (KLUCZ DO HURACANA) ===
-        omega = s.engine_rpm * 2.0 * math.pi / 60.0
-        current_power_kw = combustion_torque * omega / 1000.0
+        power_kw = engine_torque * omega / 1000.0
 
-        if i.vehicle_speed < 2.0:
-            combustion_torque = max(combustion_torque, 0.35 * self.base_torque * i.throttle)
-
-        # 2️⃣ dopiero potem miękki limiter mocy
-        excess = max(0.0, current_power_kw - self.max_power_kw)
-        soft = 1.0 / (1.0 + excess / self.max_power_kw)
-        combustion_torque *= soft
-
-        power_kw = (combustion_torque * s.engine_rpm * 2 * math.pi) / 60000.0
-        power_kw = min(power_kw, self.max_power_kw * i.throttle)
-
+        # =========================
+        # SPALANIE (BSFC)
+        # =========================
         bsfc = self.bsfc
-        idle_power_kw = 0.04 * (s.engine_rpm / self.max_rpm) * self.max_power_kw
+        fuel_kg_per_h = power_kw * bsfc / max(0.3, map_eff)
 
-        effective_power_kw = power_kw + idle_power_kw
+        idle_power_kw = 0.02 * self.max_power_kw
+        fuel_kg_per_h += idle_power_kw * bsfc
 
-        fuel_kg_per_h = effective_power_kw * bsfc
         s.fuel_rate_lph = fuel_kg_per_h / 0.745
 
-        heat_kw = power_kw * 0.65
-
         if i.vehicle_speed < 10.0:
-            s.fuel_l_per_100km = None  # albo 0.0, albo zostaw poprzednią
+            s.fuel_l_per_100km = None
         else:
             s.fuel_l_per_100km = s.fuel_rate_lph / i.vehicle_speed * 100.0
 
-
         self.output = EngineOutput(
-            torque_nm=combustion_torque,
+            torque_nm=engine_torque,
+            wheel_force_n=wheel_force,
             fuel_rate_lph=s.fuel_rate_lph,
-            heat_kw=heat_kw,
+            heat_kw=power_kw * 0.65,
             engine_rpm=s.engine_rpm,
             fuel_l_per_100km=s.fuel_l_per_100km
         )

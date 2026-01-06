@@ -1,0 +1,53 @@
+name: Ford Focus Mk4 1.5 EcoBoost
+
+engine:
+  max_rpm: 6500
+  idle_rpm: 750
+  base_torque_nm: 240
+  peak_rpm: 3000
+  max_power_kw: 134          # ~182 KM
+  rotational_inertia: 0.18
+  efficiency: 0.88
+  bsfc: 0.32
+  heat_fraction: 0.68
+  rpm_response: 3.5
+  shift_rpm_drop_rate: 5.0
+  torque_curve_min: 0.55
+  limiter_start_ratio: 0.96
+  limiter_torque_factor: 0.80
+
+
+gearbox:
+  final_drive: 3.82
+  gears: [3.54, 1.91, 1.28, 0.95, 0.76, 0.62]
+  upshift_rpm: 6000
+  downshift_rpm: 1800
+  shift_delay: 0.55
+
+
+vehicle:
+  mass_kg: 1450
+  drag_coefficient: 0.29
+  frontal_area: 2.2
+  rolling_resistance: 0.013
+  wheel_radius_m: 0.315
+  drivetrain_efficiency: 0.90
+  brake_force_max: 14000
+  load_scale: 6000
+
+
+thermals:
+  thermostat_open_temp: 90
+  fan_on_temp: 102
+  fan_off_temp: 96
+
+  airflow_coeff: 0.018
+  cooling_coeff: 0.018
+  heat_to_coolant_ratio: 0.85
+
+  oil_response_rate: 0.06
+  thermal_mass: 160
+
+
+limits:
+  redline_rpm: 6400

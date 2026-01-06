@@ -1,20 +1,24 @@
 # runtime/driver_service.py
 # runtime/driver_service.py
 import threading
+from simulator.modules.driver import DriverModule
 from streaming.kafka_service import KafkaService
 
 
 class DriverService:
-    def __init__(self, driver_module):
+    def __init__(self, driver_module: DriverModule):
         self.driver = driver_module
 
     def handle_driver_command(self, msg: dict):
-        throttle = msg.get("throttle", 0.0)
+        pedal = msg.get("pedal")
 
-        # clamp
-        throttle = max(0.0, min(1.0, throttle))
+        if pedal is None:
+            return
 
-        self.driver.cruise_throttle = throttle
+        pedal = max(0.0, min(1.0, pedal))
+
+        self.driver.set_external_pedal(pedal)
+
 
 
 

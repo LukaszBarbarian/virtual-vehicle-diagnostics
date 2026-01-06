@@ -16,7 +16,7 @@ MAIN_PROFILES_PATH = "simulator/profiles"
 
 
 def main():
-    car_spec   = CarProfileLoader.load(f"{MAIN_PROFILES_PATH}/cars/lambo.yaml")
+    car_spec   = CarProfileLoader.load(f"{MAIN_PROFILES_PATH}/cars/ford_focus.yaml")
     driver_spec = DriverProfileLoader.load(f"{MAIN_PROFILES_PATH}/drivers/normal.yaml")
     wear_spec   = WearProfileLoader.load(f"{MAIN_PROFILES_PATH}/worlds/realistic_wear.yaml")
     env_spec    = EnvironmentLoader.load(f"{MAIN_PROFILES_PATH}/worlds/summer.yaml")
@@ -39,7 +39,7 @@ def main():
     driver_listener.start()
 
     sim_engine = SimulationEngine(sim)
-    sim_engine.start(0.5)
+    sim_engine.start(0.1)
 
 
 
