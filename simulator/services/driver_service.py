@@ -2,7 +2,6 @@
 # runtime/driver_service.py
 import threading
 from simulator.modules.driver import DriverModule
-from streaming.kafka_service import KafkaService
 
 
 class DriverService:
@@ -23,15 +22,3 @@ class DriverService:
 
 
 
-class DriverKafkaListener(threading.Thread):
-    def __init__(self, kafka: KafkaService, driver_service: DriverService):
-        super().__init__(daemon=True)
-        self.kafka = kafka
-        self.driver_service = driver_service
-
-    def run(self):
-        for msg in self.kafka.consume(
-            topic="driver.commands",
-            group_id="driver-runtime"
-        ):
-            self.driver_service.handle_driver_command(msg)

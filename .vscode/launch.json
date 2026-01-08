@@ -1,13 +1,15 @@
 {
     "version": "0.2.0",
     "configurations": [
-        {
-            "name": "Run Simulation",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "simulator.main",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}"
-        }
+      {
+        "name": "Debug Streamlit",
+        "type": "python",
+        "request": "launch",
+        "module": "streamlit",
+        "args": ["run", "ui/app.py"],
+        "console": "integratedTerminal",
+        "justMyCode": false
+      }
     ]
-}
+  }
+  
