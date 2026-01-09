@@ -8,12 +8,10 @@ from streamlit_autorefresh import st_autorefresh
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from simulator.runtime import SimulationRuntime
-from streaming.producers.driver_command import DriverCommandPublisher
-from streaming.kafka.kafka_service import KafkaService
-from streaming.consumers.runner import KafkaConsumerRunner
-from streaming.consumers.dashboard import DashboardStateHandler
+# ===== APP RUNTIME =====
 
+# ===== UI / DOMAIN =====
+from app.application_runtime import ApplicationRuntime
 from state import SimState
 from widgets import throttle_slider
 from gauges import rpm_gauge, speed_gauge
@@ -67,9 +65,8 @@ def parse_dashboard_state(state: dict) -> dict:
     }
 
 
-
 def extract_car_meta(runtime) -> dict:
-    spec = runtime.car_spec  # ✅
+    spec = runtime.car_spec
     return {
         "name": spec.name,
         "engine": {
@@ -107,7 +104,6 @@ def render_car_header():
     st.divider()
 
 
-
 # =====================================================
 # CSS
 # =====================================================
@@ -141,8 +137,8 @@ if "sim_state" not in st.session_state:
     st.session_state.sim_state = SimState.OFF
     st.session_state.throttle = 0.0
 
+    st.session_state.app_runtime = None
     st.session_state.runtime = None
-    st.session_state.kafka_consumer = None
     st.session_state.dashboard_handler = None
     st.session_state.driver_publisher = None
 
@@ -172,49 +168,33 @@ with control_col:
 
     if clicked:
         if st.session_state.sim_state == SimState.OFF:
-            # ---- START ----
-            runtime = SimulationRuntime().bootstrap()
-            st.session_state.car_meta = extract_car_meta(runtime)            
-            st.session_state.runtime = runtime
+            # ---------- START ----------
+            app_rt = ApplicationRuntime("localhost:9092").start()
 
-            kafka = KafkaService("localhost:9092")
+            st.session_state.app_runtime = app_rt
+            st.session_state.runtime = app_rt.simulation
+            st.session_state.dashboard_handler = app_rt.dashboard_handler
+            st.session_state.driver_publisher = app_rt.driver_publisher
 
-            handler = DashboardStateHandler()
-            consumer = KafkaConsumerRunner(
-                kafka=kafka,
-                topic="simulation.raw",
-                group_id="dashboard",
-                handler=handler
-            )
-            consumer.start()
+            st.session_state.car_meta = extract_car_meta(app_rt.simulation)
 
-            st.session_state.kafka_consumer = consumer
-            st.session_state.dashboard_handler = handler
-            st.session_state.driver_publisher = DriverCommandPublisher(kafka)
-
-            st.session_state.max_rpm = runtime.sim.car.engine.max_rpm
+            st.session_state.max_rpm = app_rt.simulation.sim.car.engine.max_rpm
             st.session_state.redline = (
-                runtime.sim.car.engine.max_rpm
-                * runtime.sim.car.engine.limiter_start_ratio
+                app_rt.simulation.sim.car.engine.max_rpm
+                * app_rt.simulation.sim.car.engine.limiter_start_ratio
             )
 
             st.session_state.sim_state = SimState.READY
 
-
-
         else:
-            # ---- STOP ----
-            if st.session_state.runtime:
-                st.session_state.runtime.shutdown()
+            # ---------- STOP ----------
+            if st.session_state.app_runtime:
+                st.session_state.app_runtime.stop()
 
-            if st.session_state.kafka_consumer:
-                st.session_state.kafka_consumer.stop()
-
+            st.session_state.app_runtime = None
             st.session_state.runtime = None
-            st.session_state.kafka_consumer = None
             st.session_state.dashboard_handler = None
             st.session_state.driver_publisher = None
-
             st.session_state.throttle = 0.0
             st.session_state.sim_state = SimState.OFF
 
@@ -243,15 +223,12 @@ with control_col:
 
     st.caption(f"STATE: {st.session_state.sim_state}")
 
-    
-
 
 # =====================================================
 # DASHBOARD
 # =====================================================
 with dash_col:
     render_car_header()
-
 
     if st.session_state.dashboard_handler:
         raw_state = st.session_state.dashboard_handler.get_latest_state()
@@ -260,7 +237,6 @@ with dash_col:
         raw_state = None
         history = []
 
-    
     if raw_state:
         data = parse_dashboard_state(raw_state)
     else:

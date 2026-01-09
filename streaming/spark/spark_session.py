@@ -38,7 +38,7 @@ class SparkService:
         using Shared Key authentication and Delta Lake support.
         """
         AZURE_STORAGE_ACCOUNT_NAME = "lsvehicle"
-        AZURE_STORAGE_ACCOUNT_KEY = "NhRybUF3SHhZN9E4/toOolRIWCff2iEt5U2mMCIAeCG3mRMYvacp8QUzm450Csdut+ECs6K6ysIN+AStPNt1NQ=="
+        AZURE_STORAGE_ACCOUNT_KEY = "VzOELlri8y/gOfCS+OMMkTC+RSPQvz6pp7H7G+VPNWq2k+46tZ3UjGR0u0KTSqlg195mWKIz7wYM+AStGx6QZQ=="
 
         JAR_PATH = "C:/spark/jars"
         all_jars = ",".join([os.path.join(JAR_PATH, jar) for jar in os.listdir(JAR_PATH) if jar.endswith(".jar")])

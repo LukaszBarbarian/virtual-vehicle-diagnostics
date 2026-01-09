@@ -24,7 +24,7 @@ class SimulationRuntime:
     NIE jest symulatorem, NIE jest UI.
     """
 
-    def __init__(self):
+    def __init__(self, kafka: KafkaService):
         self.sim: Simulation | None = None
         self.engine: SimulationEngine | None = None
         self.driver_listener: DriverKafkaListener | None = None
@@ -33,7 +33,7 @@ class SimulationRuntime:
         self._bootstrapped = False
         self._running = False
 
-        self._kafka: KafkaService | None = None
+        self._kafka: KafkaService = kafka
         self.car_spec = None
         self.driver_spec = None
         self.wear_spec = None
@@ -73,9 +73,7 @@ class SimulationRuntime:
             env_spec
         )
 
-        # --- KAFKA (SHARED TRANSPORT) ---
-        self._kafka = KafkaService("localhost:9092")
-
+        
         # --- STATE → EVENTS (Kafka OUT) ---
         publisher = KafkaEventPublisher(
             kafka=self._kafka,
