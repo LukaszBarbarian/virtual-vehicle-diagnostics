@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from simulator.runtime import SimulationRuntime
 from streaming.producers.driver_command import DriverCommandPublisher
-from streaming.kafka_service import KafkaService
+from streaming.kafka.kafka_service import KafkaService
 from streaming.consumers.runner import KafkaConsumerRunner
 from streaming.consumers.dashboard import DashboardStateHandler
 
@@ -65,6 +65,47 @@ def parse_dashboard_state(state: dict) -> dict:
         "gear": gear_label,
         "fuel": fuel,
     }
+
+
+
+def extract_car_meta(runtime) -> dict:
+    spec = runtime.car_spec  # ✅
+    return {
+        "name": spec.name,
+        "engine": {
+            "max_rpm": spec.engine.max_rpm,
+            "max_power_kw": spec.engine.max_power_kw,
+            "base_torque_nm": spec.engine.base_torque_nm
+        },
+        "vehicle": {
+            "mass_kg": spec.vehicle.mass_kg
+        }
+    }
+
+
+def render_car_header():
+    car = st.session_state.get("car_meta")
+
+    if not car:
+        st.markdown("### 🚗 Vehicle simulation")
+        return
+
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+
+    with c1:
+        st.markdown(f"## 🚗 {car['name']}")
+
+    with c2:
+        st.metric("Max RPM", car["engine"]["max_rpm"])
+
+    with c3:
+        st.metric("Power", f"{car['engine']['max_power_kw']} kW")
+
+    with c4:
+        st.metric("Mass", f"{car['vehicle']['mass_kg']} kg")
+
+    st.divider()
+
 
 
 # =====================================================
@@ -133,6 +174,7 @@ with control_col:
         if st.session_state.sim_state == SimState.OFF:
             # ---- START ----
             runtime = SimulationRuntime().bootstrap()
+            st.session_state.car_meta = extract_car_meta(runtime)            
             st.session_state.runtime = runtime
 
             kafka = KafkaService("localhost:9092")
@@ -157,6 +199,8 @@ with control_col:
             )
 
             st.session_state.sim_state = SimState.READY
+
+
 
         else:
             # ---- STOP ----
@@ -199,12 +243,15 @@ with control_col:
 
     st.caption(f"STATE: {st.session_state.sim_state}")
 
+    
+
 
 # =====================================================
 # DASHBOARD
 # =====================================================
 with dash_col:
-    st.subheader("Dashboard")
+    render_car_header()
+
 
     if st.session_state.dashboard_handler:
         raw_state = st.session_state.dashboard_handler.get_latest_state()
@@ -213,6 +260,7 @@ with dash_col:
         raw_state = None
         history = []
 
+    
     if raw_state:
         data = parse_dashboard_state(raw_state)
     else:

@@ -1,4 +1,4 @@
-from streaming.kafka_service import KafkaService
+from streaming.kafka.kafka_service import KafkaService
 from streaming.producers.base import EventPublisher
 
 class KafkaEventPublisher(EventPublisher):

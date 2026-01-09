@@ -23,10 +23,13 @@ class Simulation:
         car_spec: CarSpecification,
         driver_spec: DriverSpecification,
         wear_spec: WearSpecification,
-        env: EnvironmentSpecification
+        env_spec: EnvironmentSpecification
     ):
+        
+   
+
         self.car = CarBuilder.build(car_spec)
-        self.env = env
+        self.env = env_spec
         self.driver = DriverBuilder.build(driver_spec)
         self.wear   = WearBuilder.build(wear_spec)
 

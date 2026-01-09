@@ -9,6 +9,21 @@
         "args": ["run", "ui/app.py"],
         "console": "integratedTerminal",
         "justMyCode": false
+      },
+      {
+        "name": "Python: Stream Processor (local spark)",
+        "type": "python",
+        "request": "launch",
+  
+        "program": "${workspaceFolder}/streaming/spark/stream_processor.py",
+  
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+  
+        "env": {
+          "PYSPARK_PYTHON": "python",
+          "PYSPARK_DRIVER_PYTHON": "python"
+        }
       }
     ]
   }

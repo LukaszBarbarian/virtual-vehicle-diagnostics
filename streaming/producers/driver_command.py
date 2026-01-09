@@ -1,5 +1,5 @@
 # streaming/producers/driver_commands.py
-from streaming.kafka_service import KafkaService
+from streaming.kafka.kafka_service import KafkaService
 from streaming.events.driver import DriverCommandEvent
 
 

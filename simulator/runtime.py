@@ -10,8 +10,8 @@ from simulator.core.simulation.simulation_engine import SimulationEngine
 
 from simulator.services.driver_service import DriverService
 from streaming.consumers.driver_listener import DriverKafkaListener
-from streaming.event_builder import EventBuilder
-from streaming.kafka_service import KafkaService
+from streaming.events.event_builder import EventBuilder
+from streaming.kafka.kafka_service import KafkaService
 from streaming.producers.kafka import KafkaEventPublisher
 
 
@@ -34,6 +34,10 @@ class SimulationRuntime:
         self._running = False
 
         self._kafka: KafkaService | None = None
+        self.car_spec = None
+        self.driver_spec = None
+        self.wear_spec = None
+        self.env_spec = None
 
     # =====================================================
     # BOOTSTRAP (NO ENGINE START)
@@ -55,6 +59,11 @@ class SimulationRuntime:
         env_spec = EnvironmentLoader.load(
             f"{MAIN_PROFILES_PATH}/worlds/summer.yaml"
         )
+
+        self.car_spec = car_spec
+        self.driver_spec = driver_spec
+        self.wear_spec = wear_spec
+        self.env_spec = env_spec
 
         # --- SIMULATION CORE ---
         self.sim = Simulation(

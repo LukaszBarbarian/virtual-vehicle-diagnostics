@@ -1,5 +1,5 @@
 import threading
-from streaming.kafka_service import KafkaService
+from streaming.kafka.kafka_service import KafkaService
 from streaming.consumers.base import EventHandler
 
 
