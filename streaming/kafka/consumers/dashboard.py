@@ -1,8 +1,9 @@
 import threading
 from collections import deque
 from typing import Dict, Any, Optional
-from streaming.consumers.base import EventHandler
 import time
+
+from streaming.kafka.consumers.base import EventHandler
 
 
 class DashboardStateHandler(EventHandler):

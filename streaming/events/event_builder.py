@@ -1,6 +1,6 @@
 # streaming/event_builder.py
 from streaming.events.simulation import RawSimulationStateEvent
-from streaming.producers.base import EventPublisher
+from streaming.kafka.producers.base import EventPublisher
 
 
 class EventBuilder:

@@ -1,17 +1,14 @@
 from kafka import KafkaProducer, KafkaConsumer
 import json
-import time
+
 
 class KafkaService:
-
     def __init__(self, brokers: str):
         self.brokers = brokers
         self._producer = None
 
-    # ---------- PRODUCER ----------
-
     def producer(self):
-        if self._producer is None:
+        if not self._producer:
             self._producer = KafkaProducer(
                 bootstrap_servers=self.brokers,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
@@ -22,12 +19,6 @@ class KafkaService:
     def send(self, topic: str, payload: dict):
         self.producer().send(topic, payload)
 
-    def flush(self):
-        if self._producer:
-            self._producer.flush()
-
-    # ---------- CONSUMER ----------
-
     def consume(self, topic: str, group_id: str):
         consumer = KafkaConsumer(
             topic,
@@ -37,6 +28,5 @@ class KafkaService:
             group_id=group_id,
             value_deserializer=lambda m: json.loads(m.decode("utf-8")),
         )
-
-        for message in consumer:
-            yield message.value
+        for msg in consumer:
+            yield msg.value

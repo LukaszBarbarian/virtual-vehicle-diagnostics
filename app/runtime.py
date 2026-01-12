@@ -1,8 +1,9 @@
-from streaming.kafka.kafka_service import KafkaService
-from simulator.runtime import SimulationRuntime
-from streaming.consumers.runner import KafkaConsumerRunner
-from streaming.consumers.dashboard import DashboardStateHandler
-from streaming.producers.driver_command import DriverCommandPublisher
+from app.app_config import AppConfig
+from infra.kafka.kafka_client import KafkaService
+from simulator.runtime.runtime import SimulationRuntime
+from streaming.kafka.consumers.dashboard import DashboardStateHandler
+from streaming.kafka.consumers.runner import KafkaConsumerRunner
+from streaming.kafka.producers.driver_command import DriverCommandPublisher
 
 
 class ApplicationRuntime:
@@ -25,7 +26,7 @@ class ApplicationRuntime:
         self.dashboard_handler = DashboardStateHandler()
         self.dashboard_consumer = KafkaConsumerRunner(
             kafka=self.kafka,
-            topic="simulation.raw",
+            topic=AppConfig.TOPIC_SIMULATION_RAW,
             group_id="dashboard",
             handler=self.dashboard_handler
         )

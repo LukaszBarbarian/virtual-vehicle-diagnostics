@@ -1,6 +1,7 @@
 # simulator/bootstrap/runtime.py
 import threading
-
+from app.app_config import AppConfig
+from infra.kafka.kafka_client import KafkaService
 from simulator.core.loader.car_profile import CarProfileLoader
 from simulator.core.loader.driver_profile import DriverProfileLoader
 from simulator.core.loader.environment_profile import EnvironmentLoader
@@ -9,13 +10,12 @@ from simulator.core.simulation.simulation import Simulation
 from simulator.core.simulation.simulation_engine import SimulationEngine
 
 from simulator.services.driver_service import DriverService
-from streaming.consumers.driver_listener import DriverKafkaListener
 from streaming.events.event_builder import EventBuilder
-from streaming.kafka.kafka_service import KafkaService
-from streaming.producers.kafka import KafkaEventPublisher
+from streaming.kafka.consumers.driver_listener import DriverKafkaListener
+from streaming.kafka.producers.publisher import KafkaEventPublisher
 
 
-MAIN_PROFILES_PATH = "simulator/profiles"
+
 
 
 class SimulationRuntime:
@@ -48,16 +48,16 @@ class SimulationRuntime:
 
         # --- LOAD PROFILES ---
         car_spec = CarProfileLoader.load(
-            f"{MAIN_PROFILES_PATH}/cars/ford_focus.yaml"
+            f"{AppConfig.MAIN_PROFILES_PATH}/cars/ford_focus.yaml"
         )
         driver_spec = DriverProfileLoader.load(
-            f"{MAIN_PROFILES_PATH}/drivers/normal.yaml"
+            f"{AppConfig.MAIN_PROFILES_PATH}/drivers/normal.yaml"
         )
         wear_spec = WearProfileLoader.load(
-            f"{MAIN_PROFILES_PATH}/worlds/realistic_wear.yaml"
+            f"{AppConfig.MAIN_PROFILES_PATH}/worlds/realistic_wear.yaml"
         )
         env_spec = EnvironmentLoader.load(
-            f"{MAIN_PROFILES_PATH}/worlds/summer.yaml"
+            f"{AppConfig.MAIN_PROFILES_PATH}/worlds/summer.yaml"
         )
 
         self.car_spec = car_spec
@@ -77,7 +77,7 @@ class SimulationRuntime:
         # --- STATE → EVENTS (Kafka OUT) ---
         publisher = KafkaEventPublisher(
             kafka=self._kafka,
-            topic="simulation.raw"
+            topic=AppConfig.TOPIC_SIMULATION_RAW
         )
         EventBuilder(self.sim.state_bus, publisher)
 

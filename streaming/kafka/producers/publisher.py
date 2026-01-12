@@ -1,5 +1,7 @@
-from streaming.kafka.kafka_service import KafkaService
-from streaming.producers.base import EventPublisher
+
+from infra.kafka.kafka_client import KafkaService
+from streaming.kafka.producers.base import EventPublisher
+
 
 class KafkaEventPublisher(EventPublisher):
     def __init__(self, kafka: KafkaService, topic: str):

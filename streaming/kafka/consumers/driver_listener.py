@@ -1,9 +1,12 @@
 # streaming/consumers/driver_listener.py
 import threading
 
+from infra.kafka.kafka_client import KafkaService
+from simulator.services.driver_service import DriverService
+
 
 class DriverKafkaListener:
-    def __init__(self, kafka, driver_service):
+    def __init__(self, kafka: KafkaService, driver_service: DriverService):
         self.kafka = kafka
         self.driver_service = driver_service
 

@@ -2,16 +2,41 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Spark – Stream Processor",
+      "name": "Spark – Bronze Ingestion (Kafka → Bronze)",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/streaming/spark/stream_processor.py",
+      "program": "${workspaceFolder}/pipelines/bronze/bronze_job.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local"
       }
     },
+    {
+      "name": "Spark – Silver Processing (Bronze → Silver)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/pipelines/silver/silver_job.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local"
+      }
+    },
+    {
+      "name": "Spark – Gold Processing (Silver → Gold)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/pipelines/gold/gold_job.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local"
+      }
+    },    
     {
       "name": "UI – Streamlit Dashboard",
       "type": "python",
@@ -30,9 +55,9 @@
   ],
   "compounds": [
     {
-      "name": "🚀 START SYSTEM (UI + Spark)",
+      "name": "🚀 START SYSTEM (UI + Bronze)",
       "configurations": [
-        "Spark – Stream Processor",
+        "Spark – Bronze Ingestion (Kafka → Bronze)",
         "UI – Streamlit Dashboard"
       ]
     }

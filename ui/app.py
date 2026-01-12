@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 # ===== APP RUNTIME =====
 
 # ===== UI / DOMAIN =====
-from app.application_runtime import ApplicationRuntime
+from app.runtime import ApplicationRuntime
 from state import SimState
 from widgets import throttle_slider
 from gauges import rpm_gauge, speed_gauge

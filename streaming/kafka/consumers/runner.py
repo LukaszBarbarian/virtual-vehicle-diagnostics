@@ -1,6 +1,7 @@
 import threading
-from streaming.kafka.kafka_service import KafkaService
-from streaming.consumers.base import EventHandler
+
+from infra.kafka.kafka_client import KafkaService
+from streaming.kafka.consumers.base import EventHandler
 
 
 class KafkaConsumerRunner:
