@@ -5,6 +5,7 @@ from typing import Dict, Any
 class RawSimulationState:
     time: float
     step: int
+    simulation_id: str
     modules: Dict[str, Dict[str, Any]]
 
 

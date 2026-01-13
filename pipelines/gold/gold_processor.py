@@ -14,38 +14,105 @@ class GoldProcessor(BaseProcessor):
             .load(AppConfig.SILVER_STATE_PATH)
         )
 
+    # --------------------------------------------------
+    # Sanity / quality rules for Gold
+    # --------------------------------------------------
+    def _sanity_data(self, df):
+        return (
+            df
+            .withColumn(
+                "is_gold_sane",
+                F.expr("""
+                    rpm_std_30s >= 0 AND
+                    throttle_std_30s >= 0 AND
+                    (
+                        has_full_window_30s = false OR
+                        (
+                            rpm_delta_30s IS NOT NULL AND
+                            abs(rpm_delta_30s) <= 5000
+                        )
+                    )
+                """)
+            )
+        )
+
+    # --------------------------------------------------
+    # Main Gold processing
+    # --------------------------------------------------
     def process(self, silver_df):
 
-        # zakładamy stały krok czasu symulacji (np. 0.1s)
-        window_30 = Window.orderBy("step").rowsBetween(-300, 0)
-        window_60 = Window.orderBy("step").rowsBetween(-600, 0)
+        # 🔑 OKNA TYLKO W RAMACH JEDNEJ SYMULACJI
+        window_30 = (
+            Window
+            .partitionBy("simulation_id")
+            .orderBy("step")
+            .rowsBetween(-300, 0)
+        )
+
+        window_60 = (
+            Window
+            .partitionBy("simulation_id")
+            .orderBy("step")
+            .rowsBetween(-600, 0)
+        )
+
+        lag_window = (
+            Window
+            .partitionBy("simulation_id")
+            .orderBy("step")
+        )
 
         gold_df = (
             silver_df
+            # --- RPM ---
             .withColumn("rpm_avg_30s", F.avg("rpm").over(window_30))
             .withColumn("rpm_std_30s", F.stddev("rpm").over(window_30))
             .withColumn("rpm_avg_60s", F.avg("rpm").over(window_60))
-            .withColumn("rpm_delta_30s", F.col("rpm") - F.lag("rpm", 300).over(Window.orderBy("step")))
+            .withColumn(
+                "rpm_delta_30s",
+                F.col("rpm") - F.lag("rpm", 300).over(lag_window)
+            )
 
-            .withColumn("engine_temp_avg_30s", F.avg("engine_temp_c").over(window_30))
-            .withColumn("engine_temp_delta_30s", F.col("engine_temp_c") - F.lag("engine_temp_c", 300).over(Window.orderBy("step")))
+            # --- COOLANT ---
+            .withColumn(
+                "coolant_temp_c_avg_30s",
+                F.avg("coolant_temp_c").over(window_30)
+            )
+            .withColumn(
+                "coolant_temp_c_delta_30s",
+                F.col("coolant_temp_c") - F.lag("coolant_temp_c", 300).over(lag_window)
+            )
 
+            # --- THROTTLE ---
             .withColumn("throttle_avg_30s", F.avg("throttle").over(window_30))
             .withColumn("throttle_std_30s", F.stddev("throttle").over(window_30))
 
-            .withColumn("wear_engine_delta_60s", F.col("wear_engine") - F.lag("wear_engine", 600).over(Window.orderBy("step")))
+            # --- WEAR ---
+            .withColumn(
+                "wear_engine_delta_60s",
+                F.col("wear_engine") - F.lag("wear_engine", 600).over(lag_window)
+            )
 
+            # --- WINDOW FLAGS ---
+            .withColumn("has_full_window_30s", F.col("step") >= 300)
+            .withColumn("has_full_window_60s", F.col("step") >= 600)
+
+            # --- METADATA ---
             .withColumn("created_at", F.current_timestamp())
+            .withColumn("date", F.to_date("created_at"))
         )
 
-        return gold_df
+        return self._sanity_data(gold_df)
 
+    # --------------------------------------------------
+    # Write Gold
+    # --------------------------------------------------
     def write(self, gold_df):
         (
             gold_df
             .write
             .format("delta")
-            .mode("overwrite")
-            .option("overwriteSchema", "true")
+            .mode("append")                  # ❗ NIE overwrite
+            .partitionBy("simulation_id")    # ❗ logiczna partycja
             .save(AppConfig.GOLD_FEATURES_PATH)
         )

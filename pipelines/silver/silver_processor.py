@@ -34,8 +34,8 @@ class SilverProcessor(BaseProcessor):
             silver_df
             .write
             .format("delta")
-            .mode("overwrite")
-            .option("overwriteSchema", "true")
+            .mode("append")
+            .partitionBy("simulation_id")
             .save(AppConfig.SILVER_STATE_PATH)
         )
 
@@ -48,15 +48,18 @@ class SilverProcessor(BaseProcessor):
             StructField("event_type", StringType()),
             StructField("event_version", IntegerType()),
             StructField("event_id", StringType()),
+            StructField("simulation_id", StringType()),
             StructField("timestamp", DoubleType()),
             StructField("payload", StructType([
                 StructField("time", DoubleType()),
                 StructField("step", IntegerType()),
                 StructField("modules", StructType([
                     StructField("engine", StructType([
-                        StructField("engine_rpm", DoubleType()),
-                        StructField("engine_temp_c", DoubleType())
+                        StructField("engine_rpm", DoubleType())
                     ])),
+                    StructField("thermals", StructType([
+                        StructField("coolant_temp_c", DoubleType()),
+                        StructField("oil_temp_c", DoubleType())])),
                     StructField("gearbox", StructType([
                         StructField("current_gear", IntegerType())
                     ])),
@@ -84,6 +87,7 @@ class SilverProcessor(BaseProcessor):
         return (
             parsed_df
             .select(
+                F.col("parsed.simulation_id").alias("simulation_id"),
                 F.col("parsed.payload.step").alias("step"),
                 F.col("parsed.payload.time").alias("simulation_time"),
 
@@ -93,7 +97,9 @@ class SilverProcessor(BaseProcessor):
                 F.col("parsed.payload.modules.driver.brake").alias("brake"),
                 F.col("parsed.payload.modules.gearbox.current_gear").alias("gear"),
 
-                F.col("parsed.payload.modules.engine.engine_temp_c").alias("engine_temp_c"),
+                F.col("parsed.payload.modules.thermals.coolant_temp_c").alias("coolant_temp_c"),
+                F.col("parsed.payload.modules.thermals.oil_temp_c").alias("oil_temp_c"),
+
                 F.col("parsed.payload.modules.wear.engine_wear").alias("wear_engine"),
                 F.col("parsed.payload.modules.wear.gearbox_wear").alias("wear_gearbox"),
 
@@ -107,6 +113,7 @@ class SilverProcessor(BaseProcessor):
             .withColumn(
                 "is_null_violation",
                 F.expr("""
+                    simulation_id IS NULL OR
                     step IS NULL OR
                     simulation_time IS NULL OR
                     rpm IS NULL OR
@@ -121,7 +128,7 @@ class SilverProcessor(BaseProcessor):
                     speed_kmh < 0 OR speed_kmh > 400 OR
                     throttle < 0 OR throttle > 1 OR
                     brake < 0 OR brake > 1 OR
-                    engine_temp_c < -40 OR engine_temp_c > 200 OR
+                    coolant_temp_c < -40 OR coolant_temp_c > 200 OR
                     wear_engine < 0 OR wear_engine > 1 OR
                     wear_gearbox < 0 OR wear_gearbox > 1
                 """)

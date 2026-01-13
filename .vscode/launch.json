@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Spark – Bronze Ingestion (Kafka → Bronze)",
+      "name": "🚀 START SYSTEM (Bronze → UI)",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/pipelines/bronze/bronze_job.py",
+      "program": "${workspaceFolder}/app/start_system.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
@@ -37,29 +37,5 @@
         "SPARK_MODE": "local"
       }
     },    
-    {
-      "name": "UI – Streamlit Dashboard",
-      "type": "python",
-      "request": "launch",
-      "module": "streamlit",
-      "args": [
-        "run",
-        "ui/app.py"
-      ],
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-      }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "🚀 START SYSTEM (UI + Bronze)",
-      "configurations": [
-        "Spark – Bronze Ingestion (Kafka → Bronze)",
-        "UI – Streamlit Dashboard"
-      ]
-    }
   ]
 }

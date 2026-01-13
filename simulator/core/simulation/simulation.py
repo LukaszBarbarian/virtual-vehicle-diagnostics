@@ -16,6 +16,8 @@ from simulator.modules.gearbox import GearboxInput, GearboxModule
 from simulator.modules.thermals import ThermalInput, ThermalModule
 from simulator.modules.vehicle import VehicleInput, VehicleModule
 from simulator.modules.wear import WearInput, WearModule
+import uuid
+
 
 class Simulation:
     def __init__(
@@ -26,7 +28,7 @@ class Simulation:
         env_spec: EnvironmentSpecification
     ):
         
-   
+        self.simulation_id = str(uuid.uuid4()) 
 
         self.car = CarBuilder.build(car_spec)
         self.env = env_spec
@@ -118,6 +120,7 @@ class Simulation:
         driver   = self.driver
 
         raw = RawSimulationState(
+            simulation_id=self.simulation_id,
             time=self.time,
             step=self.step_count,
             modules={

@@ -16,14 +16,14 @@ class BaseProcessor:
     
     @abstractmethod
     def process(self, df):
-        pass    
+        return df
 
     @abstractmethod
     def write(self, df):
         raise NotImplementedError
 
     def run(self):
-        df = self.read()
+        df = self.read()                
         df = self.transform(df)
         df = self.process(df)
         self.write(df)
