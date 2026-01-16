@@ -18,6 +18,16 @@ class SparkSessionFactory:
                 builder
                 .master("local[*]")
                 .config("spark.jars", AppConfig.ALL_JARS)
+
+                # 🔑 PYTHON – DRIVER
+                .config("spark.pyspark.python", AppConfig.PYTHON_EXEC)
+                .config("spark.pyspark.driver.python", AppConfig.PYTHON_EXEC)
+
+                # 🔑 PYTHON – EXECUTORS (BRAKUJĄCE!)
+                .config("spark.executorEnv.PYSPARK_PYTHON", AppConfig.PYTHON_EXEC)
+                .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", AppConfig.PYTHON_EXEC)
+
+                # Azure ADLS
                 .config(
                     f"fs.azure.account.key.{AppConfig.STORAGE_ACCOUNT}.dfs.core.windows.net",
                     AppConfig.STORAGE_ACCOUNT_KEY
@@ -48,4 +58,9 @@ class SparkSessionFactory:
         print(
             f"✅ SparkSession ready | mode={mode} | spark={spark.version}"
         )
+
+        # 🔍 Debug – warto zostawić na chwilę
+        print("Driver python:", spark.sparkContext.getConf().get("spark.pyspark.driver.python"))
+        print("Executor python:", spark.sparkContext.getConf().get("spark.executorEnv.PYSPARK_PYTHON"))
+
         return spark

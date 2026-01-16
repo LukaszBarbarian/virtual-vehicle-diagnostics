@@ -45,38 +45,40 @@ class SilverProcessor(BaseProcessor):
 
     def _parse_raw_event(self, bronze_df):
         raw_schema = StructType([
-            StructField("event_type", StringType()),
-            StructField("event_version", IntegerType()),
-            StructField("event_id", StringType()),
-            StructField("simulation_id", StringType()),
-            StructField("timestamp", DoubleType()),
-            StructField("payload", StructType([
-                StructField("time", DoubleType()),
-                StructField("step", IntegerType()),
-                StructField("modules", StructType([
-                    StructField("engine", StructType([
-                        StructField("engine_rpm", DoubleType())
-                    ])),
-                    StructField("thermals", StructType([
-                        StructField("coolant_temp_c", DoubleType()),
-                        StructField("oil_temp_c", DoubleType())])),
-                    StructField("gearbox", StructType([
-                        StructField("current_gear", IntegerType())
-                    ])),
-                    StructField("vehicle", StructType([
-                        StructField("speed_kmh", DoubleType())
-                    ])),
-                    StructField("driver", StructType([
-                        StructField("throttle", DoubleType()),
-                        StructField("brake", DoubleType())
-                    ])),
-                    StructField("wear", StructType([
-                        StructField("engine_wear", DoubleType()),
-                        StructField("gearbox_wear", DoubleType())
-                    ]))
+        StructField("event_type", StringType()),
+        StructField("event_version", IntegerType()),
+        StructField("event_id", StringType()),
+        StructField("timestamp", DoubleType()),
+        StructField("payload", StructType([
+            StructField("simulation_id", StringType()),   # ← TU
+            StructField("time", DoubleType()),
+            StructField("step", IntegerType()),
+            StructField("modules", StructType([
+                StructField("engine", StructType([
+                    StructField("engine_rpm", DoubleType())
+                ])),
+                StructField("thermals", StructType([
+                    StructField("coolant_temp_c", DoubleType()),
+                    StructField("oil_temp_c", DoubleType())
+                ])),
+                StructField("gearbox", StructType([
+                    StructField("current_gear", IntegerType())
+                ])),
+                StructField("vehicle", StructType([
+                    StructField("speed_kmh", DoubleType())
+                ])),
+                StructField("driver", StructType([
+                    StructField("throttle", DoubleType()),
+                    StructField("brake", DoubleType())
+                ])),
+                StructField("wear", StructType([
+                    StructField("engine_wear", DoubleType()),
+                    StructField("gearbox_wear", DoubleType())
                 ]))
             ]))
-        ])
+        ]))
+    ])
+
 
         return bronze_df.withColumn(
             "parsed",
@@ -87,7 +89,7 @@ class SilverProcessor(BaseProcessor):
         return (
             parsed_df
             .select(
-                F.col("parsed.simulation_id").alias("simulation_id"),
+                F.col("parsed.payload.simulation_id").alias("simulation_id"),
                 F.col("parsed.payload.step").alias("step"),
                 F.col("parsed.payload.time").alias("simulation_time"),
 
@@ -106,6 +108,7 @@ class SilverProcessor(BaseProcessor):
                 F.current_timestamp().alias("created_at")
             )
         )
+
 
     def _apply_quality_checks(self, df):
         return (

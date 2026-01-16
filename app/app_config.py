@@ -4,6 +4,9 @@ class AppConfig:
     """
     Configuration class for Kafka, Azure Data Lake, and Spark settings.
     """
+
+    PYTHON_EXEC = r"C:\Users\Praca\AppData\Local\Programs\Python\Python312\python.exe"
+
     # ========================
     # KAFKA
     # ========================
@@ -19,6 +22,7 @@ class AppConfig:
     BRONZE_CONTAINER = "bronze"
     SILVER_CONTAINER = "silver"
     GOLD_CONTAINER = "gold"
+    ML_CONTAINER = "mldatasets"
 
     # ========================
     # SPARK JARS CONFIGURATION
@@ -56,6 +60,16 @@ class AppConfig:
     GOLD_FEATURES_PATH = (
         f"abfss://{GOLD_CONTAINER}@{STORAGE_ACCOUNT}.dfs.core.windows.net/telemetry_features"
     )
+    
+
+    ML_DATASETS_BASE_PATH = f"abfss://{ML_CONTAINER}@{STORAGE_ACCOUNT}.dfs.core.windows.net/"
+
+    ML_DATASET_FULL_PATH  = f"{ML_DATASETS_BASE_PATH}/full"
+    ML_DATASET_TRAIN_PATH = f"{ML_DATASETS_BASE_PATH}/train"
+    ML_DATASET_TEST_PATH  = f"{ML_DATASETS_BASE_PATH}/test"
+    ML_DATASET_META_PATH  = f"{ML_DATASETS_BASE_PATH}/metadata"
+
+
 
     SILVER_QUARANTINE_PATH = f"abfss://{SILVER_CONTAINER}@{STORAGE_ACCOUNT}.dfs.core.windows.net/silver_quarantine/vehicle_telemetry"
     DATA_QUALITY_METRICS_PATH = f"abfss://system@{STORAGE_ACCOUNT}.dfs.core.windows.net/data_quality_metrics"

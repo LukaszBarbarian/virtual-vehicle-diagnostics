@@ -36,6 +36,30 @@
         "PYTHONPATH": "${workspaceFolder}",
         "SPARK_MODE": "local"
       }
-    },    
+    },
+    {
+      "name": "Spark – ML Dataset Build (Gold → ML)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/ml/datasets/ml_dataset_job.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local"
+      }
+    },
+    {
+      "name": "Spark – ML Dataset Split (Train/Test)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/ml/datasets/ml_split_job.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local"
+      }
+    }
   ]
 }

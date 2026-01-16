@@ -14,6 +14,24 @@ class GoldProcessor(BaseProcessor):
             .load(AppConfig.SILVER_STATE_PATH)
         )
 
+    def _add_engine_health_score(self, df):
+        return (
+            df
+            .withColumn(
+                "engine_health_score",
+                F.expr("""
+                    greatest(
+                        0,
+                        100
+                        - least(40, abs(rpm_delta_30s) / 100)
+                        - least(30, abs(coolant_temp_c_delta_30s) * 2)
+                        - least(30, wear_engine_delta_60s * 1000)
+                    )
+                """)
+            )
+        )
+
+
     # --------------------------------------------------
     # Sanity / quality rules for Gold
     # --------------------------------------------------
@@ -98,11 +116,19 @@ class GoldProcessor(BaseProcessor):
             .withColumn("has_full_window_60s", F.col("step") >= 600)
 
             # --- METADATA ---
-            .withColumn("created_at", F.current_timestamp())
+            .withColumn("record_ts", F.current_timestamp())
             .withColumn("date", F.to_date("created_at"))
+            .withColumn(
+                "sequence_id",
+                F.concat_ws("_", F.col("simulation_id"), F.col("step"))
+            )
+
         )
 
-        return self._sanity_data(gold_df)
+        gold_df = self._add_engine_health_score(gold_df)
+        gold_df = self._sanity_data(gold_df)
+        return gold_df
+
 
     # --------------------------------------------------
     # Write Gold
