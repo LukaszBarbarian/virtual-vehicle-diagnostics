@@ -34,6 +34,12 @@ class DriverModule(BaseModule):
         self.input = None
         self.t = 0.0
         self.external_pedal_target = None
+        self.external_brake_target = 0.0
+
+
+    def set_external_brake(self, value: float):
+        """Sets the external braking intent."""
+        self.external_brake_target = value
 
     def set_external_pedal(self, pedal: float | None):
         """
@@ -112,12 +118,18 @@ class DriverModule(BaseModule):
             self.state.throttle - prev_throttle
         ) / max(dt, 1e-4)
 
+        brake_response = 4.0 if self.state.driver_style == "sport" else 2.5
+        self.state.brake += (self.external_brake_target - self.state.brake) * brake_response * dt
+        self.state.brake = max(0.0, min(1.0, self.state.brake))
+
         self.output = DriverOutput(
             throttle=self.state.throttle,
             throttle_rate=self.state.throttle_rate,
-            brake=0.0,
+            brake=self.state.brake, # Now passing the filtered value
             cargo_mass_kg=self.state.cargo_mass_kg
         )
+
+
 
     # =========================
     # MAPA PEDAŁU

@@ -50,14 +50,14 @@ class Simulation:
                        vehicle: VehicleModule, thermals: ThermalModule,
                        wear: WearModule, driver: DriverModule):
 
-        # Kierowca
+        # 1. Update Driver first to get throttle
         driver.input = DriverInput(
             engine_rpm=engine.state.engine_rpm,
-            max_rpm=engine.max_rpm,
+            max_rpm=engine.spec.max_rpm,
         )
         driver.update(dt)
 
-        # Skrzynia biegów
+        # 2. Update Gearbox to get current gear/ratio
         gearbox.input = GearboxInput(
             engine_rpm=engine.state.engine_rpm,
             throttle=driver.output.throttle,
@@ -66,42 +66,7 @@ class Simulation:
         )
         gearbox.update(dt)
 
-        # Silnik
-        engine.input = EngineInput(
-            throttle=driver.output.throttle,
-            current_gear=gearbox.state.current_gear,
-            vehicle_speed=vehicle.state.speed_kmh,
-            ambient_temp_c=self.env.ambient_temp,
-            cooling_efficiency=1.0 - wear.state.cooling_efficiency_loss,
-            torque_loss_factor=wear.state.torque_loss_factor,
-            clutch_factor=0.0 if gearbox.state.shift_event else 1.0,
-            gear_ratio_total=gearbox.output.gear_ratio,
-            wheel_radius_m=vehicle.wheel_radius,
-            vehicle_acc_mps2=vehicle.state.acc_mps2,
-            vehicle_mass_kg=vehicle.state.mass_kg
-        )
-        engine.update(dt)
-
-        # Pojazd
-        vehicle.input = VehicleInput(
-            torque_nm=engine.output.torque_nm,
-            gear_ratio=gearbox.output.gear_ratio,
-            brake=driver.output.brake,
-            cargo_mass_kg=driver.output.cargo_mass_kg,
-            road_incline_pct=self.env.road_incline
-        )
-        vehicle.update(dt)
-
-        # Moduł chłodzenia
-        thermals.input = ThermalInput(
-            heat_kw=engine.output.heat_kw,
-            vehicle_speed=vehicle.state.speed_kmh,
-            ambient_temp_c=self.env.ambient_temp,
-            cooling_efficiency=1.0 - wear.state.cooling_efficiency_loss
-        )
-        thermals.update(dt)
-
-        # Zużycie
+        # 3. Update Wear (uses previous state)
         wear.input = WearInput(
             engine_temp_c=thermals.state.coolant_temp_c,
             oil_temp_c=thermals.state.oil_temp_c,
@@ -111,7 +76,47 @@ class Simulation:
         )
         wear.update(dt)
 
+        # 4. Update Engine (uses throttle, gear and wear)
+        engine.input = EngineInput(
+            throttle=driver.output.throttle,
+            current_gear=gearbox.state.current_gear,
+            vehicle_speed=vehicle.state.speed_kmh,
+            ambient_temp_c=self.env.ambient_temp,
+            cooling_efficiency=wear.output.cooling_efficiency,
+            torque_loss_factor=wear.output.torque_loss_factor,
+            clutch_factor=0.0 if gearbox.state.shift_event else 1.0,
+            gear_ratio_total=gearbox.output.gear_ratio,
+            wheel_radius_m=vehicle.wheel_radius,
+            vehicle_acc_mps2=vehicle.state.acc_mps2,
+            vehicle_mass_kg=vehicle.state.mass_kg
+        )
+        engine.update(dt)
+
+        # 5. Update Vehicle physics
+        vehicle.input = VehicleInput(
+            torque_nm=engine.output.torque_nm,
+            gear_ratio=gearbox.output.gear_ratio,
+            brake=driver.output.brake,
+            cargo_mass_kg=driver.output.cargo_mass_kg,
+            road_incline_pct=self.env.road_incline
+        )
+        vehicle.update(dt)
+
+        # 6. Update Thermals
+        thermals.input = ThermalInput(
+            heat_kw=engine.output.heat_kw,
+            vehicle_speed=vehicle.state.speed_kmh,
+            ambient_temp_c=self.env.ambient_temp,
+            cooling_efficiency=wear.output.cooling_efficiency
+        )
+        thermals.update(dt)
+
+
+
     def step(self, dt: float):
+        if dt <= 0.0:
+            return None  
+        
         engine   = self.car.engine
         gearbox  = self.car.gearbox
         vehicle  = self.car.vehicle
@@ -136,7 +141,9 @@ class Simulation:
         self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
 
         self.print_state()
-        self.publish(dt, raw)
+
+        if engine.state.engine_rpm > 1.0 or vehicle.state.speed_kmh > 0.1:
+            self.publish(dt, raw)
 
     def publish(self, dt: float, raw: RawSimulationState):
         self.time += dt

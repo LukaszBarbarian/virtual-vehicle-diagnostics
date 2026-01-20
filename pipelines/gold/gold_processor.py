@@ -4,7 +4,7 @@ from pyspark.sql.window import Window
 from app.app_config import AppConfig
 from pipelines.base.processor import BaseProcessor
 
-
+PREDICTION_HORIZON = 30
 class GoldProcessor(BaseProcessor):
 
     def read(self):
@@ -126,6 +126,24 @@ class GoldProcessor(BaseProcessor):
         )
 
         gold_df = self._add_engine_health_score(gold_df)
+
+        # --------------------------------------------------
+        # FUTURE TARGET (ML)
+        # --------------------------------------------------
+        gold_df = gold_df.withColumn(
+            "engine_health_score_future",
+            F.lead(
+                "engine_health_score",
+                PREDICTION_HORIZON
+            ).over(lag_window)
+        )
+
+        # opcjonalna, ale BARDZO dobra flaga
+        gold_df = gold_df.withColumn(
+            "has_future_label",
+            F.col("engine_health_score_future").isNotNull()
+        )
+
         gold_df = self._sanity_data(gold_df)
         return gold_df
 

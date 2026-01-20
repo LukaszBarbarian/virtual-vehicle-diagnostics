@@ -10,7 +10,6 @@ class SimulationEngine:
         self.simulation = simulation
         self.running = False
         self.thread = None
-        self.on_tick = None
 
     def start_loop(self, dt=0.1):
         if self.running:
@@ -19,9 +18,7 @@ class SimulationEngine:
         self.running = True
 
         def loop():
-            while self.running:
-                if self.on_tick:
-                    self.on_tick(dt)
+            while self.running:                
                 self.simulation.step(dt)
                 time.sleep(dt)
 

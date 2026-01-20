@@ -1,22 +1,11 @@
-# engine.py
 from dataclasses import dataclass
 from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
 import math
-
 from simulator.core.models.model_specification import EngineSpecification
 
 @dataclass
-class EngineState(BaseState):
-    engine_rpm: float
-    engine_temp_c: float
-    oil_temp_c: float
-    efficiency: float
-    rotational_inertia: float
-    fuel_rate_lph: float = 0.0
-    fuel_l_per_100km: float = 0.0
-
-@dataclass
 class EngineInput(BaseInput):
+    """Engine input parameters from the simulation environment."""
     throttle: float
     current_gear: int
     vehicle_speed: float
@@ -29,167 +18,136 @@ class EngineInput(BaseInput):
     vehicle_acc_mps2: float
     wheel_radius_m: float = 0.34
 
-
-
 @dataclass
 class EngineOutput(BaseOutput):
+    """Engine output data for other modules and logging."""
     torque_nm: float
-    wheel_force_n: float   # ⬅️ KLUCZOWE
+    wheel_force_n: float
     fuel_rate_lph: float
     heat_kw: float
     engine_rpm: float
     fuel_l_per_100km: float
 
+@dataclass
+class EngineState(BaseState):
+    """Current state of the engine module."""
+    engine_rpm: float
+    engine_temp_c: float
+    oil_temp_c: float
+    efficiency: float
+    fuel_rate_lph: float = 0.0
+    engine_torque_filtered: float = 0.0
+    internal_friction_nm: float = 0.0
+    rotational_inertia: float = 0.08  # Reduced inertia for better response
 
 class EngineModule(BaseModule):
+    """
+    Advanced engine module with engine braking, anti-stall, and high responsiveness.
+    """
     def __init__(self, initial_state: EngineState):
         self.state = initial_state
-        self.input = None
-        self.output = None
-
-        # wartości domyślne (ustawiane w apply_config)
-        self.max_rpm = 9000.0
-        self.base_torque = 250.0
-        self.peak_rpm = 4000.0
-        self.max_power_kw = 480.0
+        self.spec: EngineSpecification = None
+        self.idle_rpm = 800.0
 
     def apply_config(self, cfg: EngineSpecification):
-        self.max_rpm = cfg.max_rpm
-        self.idle_rpm = cfg.idle_rpm
-        self.base_torque = cfg.base_torque_nm
-        self.peak_rpm = 7500
+        self.spec = cfg
+        self.max_rpm = getattr(cfg, 'max_rpm', 7000.0)
+        self.max_torque = (
+            getattr(cfg, 'max_torque', None) or 
+            getattr(cfg, 'peak_torque', None) or 
+            getattr(cfg, 'torque_nm', 300.0)
+        )
+        self.max_power_rpm = (
+            getattr(cfg, 'max_power_rpm', None) or 
+            getattr(cfg, 'power_rpm', self.max_rpm * 0.85)
+        )
+        # Dynamic inertia based on engine power (Lambo has more than a Civic)
+        self.state.rotational_inertia = getattr(cfg, 'rotational_inertia', 0.08)
 
-        self.max_power_kw = cfg.max_power_kw
-        self.state.rotational_inertia = cfg.rotational_inertia
-        self.state.efficiency = cfg.efficiency
+    def _get_max_torque_at_rpm(self, rpm: float) -> float:
+        """Calculates available torque at current RPM."""
+        peak_t_rpm = self.max_power_rpm * 0.75
+        rpm_range = self.max_rpm - self.idle_rpm
+        x = (rpm - peak_t_rpm) / max(1.0, rpm_range)
+        torque_curve = 1.0 - (x**2 * 1.5)
+        return max(0.0, self.max_torque * torque_curve)
 
-        self.bsfc = cfg.bsfc
-        self.heat_fraction = cfg.heat_fraction
-
-        self.rpm_response = cfg.rpm_response
-        self.shift_rpm_drop_rate = cfg.shift_rpm_drop_rate
-        self.torque_curve_min = cfg.torque_curve_min
-        self.limiter_start_ratio = cfg.limiter_start_ratio
-        self.limiter_torque_factor = cfg.limiter_torque_factor
-
-    def _efficiency_map(self, rpm: float, load: float):
-        rpm_ratio = rpm / self.max_rpm
-        eff_rpm = math.exp(-((rpm_ratio - 0.55) ** 2) / 0.05)
-        eff_load = math.exp(-((load - 0.6) ** 2) / 0.08)
-        # sprawność zależy od obrotów i obciążenia
-        return 0.55 + 0.45 * eff_rpm * eff_load
-
-    def _rpm_from_wheels(self, vehicle_speed_kmh: float, wheel_radius_m: float):
-        v_mps = vehicle_speed_kmh / 3.6
-        return v_mps / (2.0 * math.pi * max(0.1, wheel_radius_m)) * 60.0
+    def _get_losses(self, rpm: float, throttle: float) -> float:
+        """Simulates internal friction and engine braking (pumping losses)."""
+        # Friction increases with RPM
+        friction = (self.max_torque * 0.04) + (rpm / self.max_rpm) * (self.max_torque * 0.08)
+        
+        # Engine braking (pumping loss): strongest when throttle is closed
+        # This acts as a 'brake' when you release the gas pedal
+        pumping_loss = (1.0 - throttle) * (rpm / self.max_rpm) * (self.max_torque * 0.22)
+        return friction + pumping_loss
 
     def update(self, dt: float):
-        i: EngineInput = self.input
-        s: EngineState = self.state
+        i = self.input
+        s = self.state
 
-        idle_rpm = self.idle_rpm
-        max_rpm = self.max_rpm
-
-        # =========================
-        # SPRZĘGŁO ROZŁĄCZONE
-        # =========================
-        if i.clutch_factor < 0.5:
-            decay = self.shift_rpm_drop_rate * dt
-            s.engine_rpm *= max(0.0, 1.0 - decay)
-
-            if s.engine_rpm < idle_rpm:
-                s.engine_rpm = idle_rpm
-
-            self.output = EngineOutput(
-                torque_nm=0.0,
-                wheel_force_n=0.0,
-                fuel_rate_lph=s.fuel_rate_lph * 0.4,
-                heat_kw=0.0,
-                engine_rpm=s.engine_rpm,
-                fuel_l_per_100km=s.fuel_l_per_100km
-            )
-            return
-
-        # =========================
-        # RPM Z KÓŁ
-        # =========================
-        wheel_rpm = self._rpm_from_wheels(i.vehicle_speed, i.wheel_radius_m)
-        wheel_target_rpm = (
-            wheel_rpm * i.gear_ratio_total if i.current_gear > 0 else idle_rpm
-        )
-
-        target_rpm = max(idle_rpm, wheel_target_rpm)
-
-        alpha = min(1.0, self.rpm_response * dt)
-        delta = target_rpm - s.engine_rpm
-        max_delta = 3000.0 * dt
-        delta = max(-max_delta, min(max_delta, delta))
-        s.engine_rpm += delta * alpha
-
-        # =========================
-        # KRZYWA MOMENTU
-        # =========================
-        x = s.engine_rpm / max(1.0, self.peak_rpm)
-        torque_curve = max(self.torque_curve_min, 1.0 - (x - 1.0) ** 2)
-
-        load = self.vehicle.state.load if hasattr(self, "vehicle") else 0.5
-        map_eff = self._efficiency_map(s.engine_rpm, load)
-        effective_eff = map_eff * (1.0 - i.torque_loss_factor)
-
-        # =========================
-        # OGRANICZENIE MOCĄ (GAZ)
-        # =========================
-        available_power_kw = self.max_power_kw * i.throttle
-        omega = max(1e-3, s.engine_rpm * 2.0 * math.pi / 60.0)
-        power_limited_torque = (available_power_kw * 1000.0) / omega
-
-        raw_engine_torque = min(
-            self.base_torque * torque_curve,
-            power_limited_torque
-        ) * effective_eff
-
-        # =========================
-        # 🔑 TŁUMIENIE MOMENTU (KLUCZ)
-        # =========================
-        if not hasattr(s, "engine_torque_filtered"):
-            s.engine_torque_filtered = raw_engine_torque
-
-        s.engine_torque_filtered += (
-            raw_engine_torque - s.engine_torque_filtered
-        ) * 0.15
-
-        engine_torque = s.engine_torque_filtered
-
-        # limiter obrotów
-        if s.engine_rpm > max_rpm * self.limiter_start_ratio:
-            engine_torque *= self.limiter_torque_factor
-
-        drive_torque = engine_torque * i.gear_ratio_total * i.clutch_factor
-        wheel_force = drive_torque / max(0.1, i.wheel_radius_m)
-
-        power_kw = engine_torque * omega / 1000.0
-
-        # =========================
-        # SPALANIE (BSFC)
-        # =========================
-        bsfc = self.bsfc
-        fuel_kg_per_h = power_kw * bsfc / max(0.3, map_eff)
-
-        idle_power_kw = 0.02 * self.max_power_kw
-        fuel_kg_per_h += idle_power_kw * bsfc
-
-        s.fuel_rate_lph = fuel_kg_per_h / 0.745
-
-        if i.vehicle_speed < 10.0:
-            s.fuel_l_per_100km = None
+        # 1. THROTTLE RESPONSE
+        effective_throttle = i.throttle 
+        
+        # 2. RPM LOGIC
+        if i.clutch_factor > 0.8 and i.gear_ratio_total > 0:
+            v_mps = i.vehicle_speed / 3.6
+            wheel_rps = v_mps / (2 * math.pi * max(0.01, i.wheel_radius_m))
+            target_rpm = wheel_rps * i.gear_ratio_total * 60
+            s.engine_rpm = max(self.idle_rpm, min(self.max_rpm, target_rpm))
         else:
-            s.fuel_l_per_100km = s.fuel_rate_lph / i.vehicle_speed * 100.0
+            # Freewheeling RPM change (neutral or clutch pressed)
+            angular_accel = (s.engine_torque_filtered / max(0.01, s.rotational_inertia))
+            rpm_change = (angular_accel * (60 / (2 * math.pi))) * dt
+            s.engine_rpm = max(0.0, min(self.max_rpm + 500, s.engine_rpm + rpm_change))
+
+        # 3. TORQUE CALCULATION
+        max_t = self._get_max_torque_at_rpm(s.engine_rpm) * (1.0 - i.torque_loss_factor)
+        s.internal_friction_nm = self._get_losses(s.engine_rpm, effective_throttle)
+        
+        # 4. CREEP & ANTI-STALL
+        creep_torque = self.max_torque * 0.12
+        idle_torque_request = creep_torque if i.current_gear > 0 else 0.0
+
+        if s.engine_rpm < self.idle_rpm:
+            # Aggressive anti-stall response
+            idle_torque_request += (self.idle_rpm - s.engine_rpm) * 6.0
+            
+        # Torque from throttle with an initial 'kick' for responsiveness
+        throttle_torque = max_t * effective_throttle
+        if effective_throttle > 0.01:
+            throttle_torque += max_t * 0.05 
+
+        # RAW NET TORQUE (can be negative due to losses -> engine braking)
+        raw_net_torque = throttle_torque + idle_torque_request - s.internal_friction_nm
+
+        # 5. FAST & SAFE FILTERING
+        # Alpha 0.85 means the engine reaches target torque very quickly
+        alpha = min(1.0, 0.85 * (dt / 0.01))
+        s.engine_torque_filtered += (raw_net_torque - s.engine_torque_filtered) * alpha
+
+        # 6. PERFORMANCE & FUEL LOGIC
+        omega = s.engine_rpm * 2 * math.pi / 60
+        output_power_kw = (s.engine_torque_filtered * omega) / 1000.0
+        
+        # FUEL CUT-OFF: If engine is braking (negative torque) and RPM is high, fuel is 0
+        if s.engine_torque_filtered < 0 and s.engine_rpm > self.idle_rpm + 200:
+            s.fuel_rate_lph = 0.0
+        else:
+            # Normal fuel consumption based on indicated power
+            total_indicated_power_kw = max(0.0, output_power_kw + (s.internal_friction_nm * omega / 1000.0))
+            fuel_lph = 1.2 + (total_indicated_power_kw * 0.22)
+            s.fuel_rate_lph = min(600.0, fuel_lph)
+
+        # Temperature simulation
+        target_temp = 90.0 + (effective_throttle * 25.0)
+        s.engine_temp_c += (target_temp - s.engine_temp_c) * (0.02 * dt / 0.01)
 
         self.output = EngineOutput(
-            torque_nm=engine_torque,
-            wheel_force_n=wheel_force,
-            fuel_rate_lph=s.fuel_rate_lph,
-            heat_kw=power_kw * 0.65,
-            engine_rpm=s.engine_rpm,
-            fuel_l_per_100km=s.fuel_l_per_100km
+            torque_nm=round(s.engine_torque_filtered, 2),
+            engine_rpm=round(s.engine_rpm, 2),
+            fuel_rate_lph=round(s.fuel_rate_lph, 2),
+            heat_kw=round(max(0.0, output_power_kw * 1.5), 2),
+            wheel_force_n=0.0,
+            fuel_l_per_100km=0.0
         )

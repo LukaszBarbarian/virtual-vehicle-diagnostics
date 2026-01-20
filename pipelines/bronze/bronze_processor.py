@@ -33,5 +33,4 @@ class BronzeProcessor(BaseProcessor):
             .option("path", AppConfig.BRONZE_RAW_PATH)
             .option("checkpointLocation", AppConfig.BRONZE_CHECKPOINT)
             .start()
-            .awaitTermination()
         )

@@ -14,7 +14,8 @@ FEATURE_COLUMNS = [
     "wear_engine_delta_60s",
 ]
 
-TARGET_COLUMN = "engine_health_score"
+#TARGET_COLUMN = "engine_health_score"
+TARGET_COLUMN = "engine_health_score_future"
 
 META_COLUMNS = [
     "simulation_id",

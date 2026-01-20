@@ -16,7 +16,10 @@ engine:
   limiter_start_ratio: 0.97
   limiter_torque_factor: 0.85
 
-
+display:
+  max_speed_on_gauge: 340
+  speed_major_step: 40
+  rpm_major_step: 1000
 
 
 

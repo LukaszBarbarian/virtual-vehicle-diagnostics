@@ -9,16 +9,14 @@ class DriverService:
         self.driver = driver_module
 
     def handle_driver_command(self, msg: dict):
-        pedal = msg.get("pedal")
+        throttle = msg.get("pedal")
+        brake = msg.get("brake")
 
-        if pedal is None:
-            return
-
-        pedal = max(0.0, min(1.0, pedal))
-
-        self.driver.set_external_pedal(pedal)
-
-
-
+        if throttle is not None:
+            self.driver.set_external_pedal(max(0.0, min(1.0, throttle)))
+        
+        if brake is not None:
+            # We need to add this method to DriverModule
+            self.driver.set_external_brake(max(0.0, min(1.0, brake)))
 
 

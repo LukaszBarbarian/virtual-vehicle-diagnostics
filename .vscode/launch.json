@@ -60,6 +60,19 @@
         "PYTHONPATH": "${workspaceFolder}",
         "SPARK_MODE": "local"
       }
+    },
+    {
+      "name": "🧠 ML – Model Training (MLflow)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/ml/training/ml_training_job.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "SPARK_MODE": "local",
+        "MLFLOW_TRACKING_URI": "file:${workspaceFolder}/mlruns"
+      }
     }
   ]
 }
