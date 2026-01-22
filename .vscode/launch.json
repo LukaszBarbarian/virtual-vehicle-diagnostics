@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "🚀 START SYSTEM (Bronze → UI)",
+      "name": "🖥️ UI",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/app/start_system.py",
+      "program": "${workspaceFolder}/app/runtimes/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
@@ -14,10 +14,10 @@
       }
     },
     {
-      "name": "Spark – Silver Processing (Bronze → Silver)",
+      "name": "🚂 PIPELINES (Bronze → Gold)",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/pipelines/silver/silver_job.py",
+      "program": "${workspaceFolder}/app/runtimes/run_pipelines.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
@@ -26,52 +26,15 @@
       }
     },
     {
-      "name": "Spark – Gold Processing (Silver → Gold)",
+      "name": "🧠 ML DATASETS (Gold → Train/Test)",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/pipelines/gold/gold_job.py",
+      "program": "${workspaceFolder}/app/runtimes/run_ml_datasets.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
         "SPARK_MODE": "local"
-      }
-    },
-    {
-      "name": "Spark – ML Dataset Build (Gold → ML)",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/ml/datasets/ml_dataset_job.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local"
-      }
-    },
-    {
-      "name": "Spark – ML Dataset Split (Train/Test)",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/ml/datasets/ml_split_job.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local"
-      }
-    },
-    {
-      "name": "🧠 ML – Model Training (MLflow)",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/ml/training/ml_training_job.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local",
-        "MLFLOW_TRACKING_URI": "file:${workspaceFolder}/mlruns"
       }
     }
   ]

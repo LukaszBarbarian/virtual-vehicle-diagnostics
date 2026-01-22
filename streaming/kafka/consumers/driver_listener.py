@@ -6,13 +6,13 @@ from simulator.services.driver_service import DriverService
 
 
 class DriverKafkaListener:
-    def __init__(self, kafka: KafkaService, driver_service: DriverService):
+    def __init__(self, kafka: KafkaService, driver_service: DriverService, simulation_id: str):
         self.kafka = kafka
         self.driver_service = driver_service
-
         self.topic = "driver.commands"
-        self.group_id = "driver"
-
+        # UNIQUE group_id prevents reading old messages from previous sessions
+        self.group_id = f"driver_{simulation_id}" 
+        
         self._running = False
         self._thread = None
 

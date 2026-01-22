@@ -118,10 +118,11 @@ class GoldProcessor(BaseProcessor):
             # --- METADATA ---
             .withColumn("record_ts", F.current_timestamp())
             .withColumn("date", F.to_date("created_at"))
-            .withColumn(
-                "sequence_id",
-                F.concat_ws("_", F.col("simulation_id"), F.col("step"))
+            .withColumn("sequence_id", F.concat_ws("_", F.col("simulation_id"), F.col("step"))) # Dodany )
+            .withColumn("driver_aggression_30s", 
+                (F.stddev("throttle").over(window_30) + F.stddev("brake").over(window_30)) / 2
             )
+            .withColumn("thermal_stress_index", F.abs(F.col("oil_temp_c") - F.col("coolant_temp_c")))
 
         )
 
@@ -156,7 +157,8 @@ class GoldProcessor(BaseProcessor):
             gold_df
             .write
             .format("delta")
-            .mode("append")                  # ❗ NIE overwrite
+            .mode("append")    
+            .option("mergeSchema", "true")
             .partitionBy("simulation_id")    # ❗ logiczna partycja
             .save(AppConfig.GOLD_FEATURES_PATH)
         )

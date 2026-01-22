@@ -2,7 +2,7 @@ import threading
 from app.app_config import AppConfig
 from infra.kafka.kafka_client import KafkaService
 from infra.spark.spark_session import SparkSessionFactory
-from pipelines.bronze.bronze_processor import BronzeProcessor
+from pipelines.processor.bronze_processor import BronzeProcessor
 from simulator.runtime.runtime import SimulationRuntime
 from streaming.kafka.consumers.dashboard import DashboardStateHandler
 from streaming.kafka.consumers.runner import KafkaConsumerRunner
@@ -12,8 +12,11 @@ from streaming.kafka.producers.driver_command import DriverCommandPublisher
 class ApplicationRuntime:
     def __init__(self, kafka_brokers: str):
         self.kafka = KafkaService(kafka_brokers)
-        self.simulation: SimulationRuntime | None = None
+        self.simulation_runtime = SimulationRuntime(self.kafka)
         self.spark_initialized = False
+
+        self.dashboard_consumer = None
+        self.driver_publisher = None
         
         # Inicjalizujemy Sparka od razu przy starcie aplikacji
         self._initialize_spark()
@@ -33,23 +36,22 @@ class ApplicationRuntime:
 
     def start_session(self, on_state_cb=None):
         """
-        Przygotowuje nową sesję i od razu konfiguruje callbacki.
+        Prepares a new session and ensures the previous one is fully terminated.
         """
-        if self.simulation:
-            self.simulation.shutdown()
+        # 1. STOP PREVIOUS SESSION COMPLETELY
+        if self.simulation_runtime:
+            self.simulation_runtime.shutdown()
 
-        self.simulation = SimulationRuntime(self.kafka).bootstrap()
+        self.simulation = self.simulation_runtime.bootstrap()
         
-        # Przekazujemy callback głębiej do szyny zdarzeń symulatora
         if on_state_cb:
             self.simulation.sim.state_bus.subscribe(on_state_cb)
         
-        # Inicjalizujemy resztę komponentów UI
         self.dashboard_handler = DashboardStateHandler()
         self.dashboard_consumer = KafkaConsumerRunner(
             kafka=self.kafka,
             topic=AppConfig.TOPIC_SIMULATION_RAW,
-            group_id="dashboard",
+            group_id=f"dashboard_{self.simulation.sim.simulation_id}", # UNIQUE GROUP ID
             handler=self.dashboard_handler
         )
         self.dashboard_consumer.start()

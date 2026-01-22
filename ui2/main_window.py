@@ -6,8 +6,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 
-from app.runtime import ApplicationRuntime
+
+from app.runtimes.runtime import ApplicationRuntime
+from ml.evaluation.driver_coaching import DriverCoachingEngine
 from ui2.profile_loader import load_car_profile
+
+from ui2.widgets.coaching_panel import CoachingPanel
 from ui2.widgets.control_bar import ControlBar
 from ui2.widgets.gauge import CircularGauge
 from ui2.widgets.gear_display import GearDisplay
@@ -31,6 +35,14 @@ class MainWindow(QWidget):
         self.sum_wear = 0.0
         self.throttle_val = 0.0
         self.brake_val = 0.0
+
+        self.history_rpm = []
+        self.history_temp = []
+        self.history_throttle = []
+        self.last_wear_60s = 0.0
+        self.wear_timer = 0
+
+        self.coaching_engine = DriverCoachingEngine("mlruns/0/16f03f43054f4ed59a7a9e336ffc4527/artifacts/model")
         
         # Infrastruktura
         self.app_runtime = ApplicationRuntime("localhost:9092")
@@ -49,7 +61,7 @@ class MainWindow(QWidget):
 
         self.main_content = QHBoxLayout()
 
-        # --- PANEL LEWY (Konfiguracja + Statystyki) ---
+        # --- PANEL LEWY (Konfiguracja + Statystyki + Coaching) ---
         control_panel = QVBoxLayout()
         
         control_panel.addWidget(QLabel("Driver profile"))
@@ -69,7 +81,7 @@ class MainWindow(QWidget):
         
         control_panel.addSpacing(15)
 
-        # PANEL STATYSTYK (Tutaj przeniesione z góry)
+        # PANEL STATYSTYK
         self.stats_group = QVBoxLayout()
         self.avg_speed_lbl = QLabel("AVG SPD: 0.0 km/h")
         self.avg_fuel_lbl = QLabel("AVG FUEL: 0.0 L/h")
@@ -80,7 +92,13 @@ class MainWindow(QWidget):
             self.stats_group.addWidget(lbl)
         control_panel.addLayout(self.stats_group)
 
-        control_panel.addStretch()
+        control_panel.addSpacing(20)
+
+        # --- PANEL COACHINGOWY (Wstawiony tutaj pod statystyki) ---
+        self.coaching_panel = CoachingPanel() 
+        control_panel.addWidget(self.coaching_panel)
+
+        control_panel.addStretch() # Odpycha wszystko do góry, przycisk START wyląduje niżej
         
         self.start_button = QPushButton("START")
         self.start_button.setFixedSize(100, 100)
@@ -120,7 +138,6 @@ class MainWindow(QWidget):
         # --- Gas Panel (Throttle) ---
         gas_col = QVBoxLayout()
         self.throttle_label = QLabel("GAS\n0%")
-        # Updated font style and color for GAS label
         self.throttle_label.setStyleSheet("color: #00ff00; font-family: monospace; font-weight: bold; font-size: 14px;")
         
         self.throttle_bar = ControlBar(horizontal=False, color="#00ff00")
@@ -136,7 +153,6 @@ class MainWindow(QWidget):
         # --- Brake Panel ---
         lower_row = QHBoxLayout()
         self.brake_label = QLabel("BRAKE 0%")
-        # Updated font style and color for BRAKE label
         self.brake_label.setStyleSheet("color: #ff4d4d; font-family: monospace; font-weight: bold; font-size: 14px;")
         
         self.brake_bar = ControlBar(horizontal=True, color="#ff4d4d")
@@ -147,8 +163,10 @@ class MainWindow(QWidget):
         dashboard_layout.addLayout(upper_row, 5)
         dashboard_layout.addLayout(lower_row, 1)
 
-        self.main_content.addLayout(control_panel, 1)
-        self.main_content.addLayout(dashboard_layout, 5)
+        # Łączenie wszystkiego w główny content
+        self.main_content.addLayout(control_panel, 1) # Lewy panel (Config + Stats + Coaching)
+        self.main_content.addLayout(dashboard_layout, 4) # Prawy panel (Zegary)
+        
         self.root.addLayout(self.main_content, 5)
 
         # --- KONSOLA LOGÓW ---
@@ -179,7 +197,9 @@ class MainWindow(QWidget):
             self.sum_fuel = 0.0
             self.sum_wear = 0.0
             self.throttle_val = 0.0
+            self.brake_val = 0.0
             self.throttle_bar.set_value(0)
+            self.brake_bar.set_value(0)
             self.throttle_label.setText("GAS\n0%")
 
             sim_id = self.app_runtime.start_session(on_state_cb=self._on_simulation_state)
@@ -195,46 +215,121 @@ class MainWindow(QWidget):
 
     def _on_simulation_state(self, raw_state):
         m = raw_state.modules
-        e = m.get("engine", {})
-        v = m.get("vehicle", {})
-        t = m.get("thermals", {})
-        g = m.get("gearbox", {})
-        w = m.get("wear", {})
-        d = m.get("driver", {})
+        # Wyciągamy słowniki
+        e_dict = m.get("engine", {})
+        v_dict = m.get("vehicle", {})
+        t_dict = m.get("thermals", {})
+        g_dict = m.get("gearbox", {})
+        w_dict = m.get("wear", {})
+        d_dict = m.get("driver", {})
 
-        # 1. Update Gauges
-        spd = v.get("speed_kmh", 0)
-        fuel = e.get("fuel_rate_lph", 0)
-        wear = w.get("engine_wear", 0)
-        
-        self.rpm_gauge.set_value(e.get("engine_rpm", 0))
-        self.speed_gauge.set_value(spd)
-        self.temp_gauge.set_value(t.get("coolant_temp_c", 20))
-        self.gear_display.set_gear(g.get("current_gear", 0))
-        self.fuel_val_label.setText(f"{fuel:.1f}")
+        # Wyciągamy konkretne WARTOŚCI liczbowe (to naprawia błąd porównania)
+        curr_rpm = e_dict.get("engine_rpm", 0)
+        curr_spd = v_dict.get("speed_kmh", 0)
+        curr_temp = t_dict.get("coolant_temp_c", 0)
+        curr_fuel = e_dict.get("fuel_rate_lph", 0)
+        curr_wear = w_dict.get("engine_wear", 0)
+        curr_throttle = d_dict.get("throttle", 0)
+
+        # 1. Update Gauges (używamy zmiennych liczbowych)
+        self.rpm_gauge.set_value(curr_rpm)
+        self.speed_gauge.set_value(curr_spd)
+        self.temp_gauge.set_value(curr_temp)
+        self.gear_display.set_gear(g_dict.get("current_gear", 0))
+        self.fuel_val_label.setText(f"{curr_fuel:.1f}")
 
         # 2. Update Session Stats
         self.session_ticks += 1
-        self.sum_speed += spd
-        self.sum_fuel += fuel
-        self.sum_wear = wear 
+        self.sum_speed += curr_spd
+        self.sum_fuel += curr_fuel
+        self.sum_wear = curr_wear 
 
         self.avg_speed_lbl.setText(f"AVG SPD: {self.sum_speed/self.session_ticks:.1f} km/h")
         self.avg_fuel_lbl.setText(f"AVG FUEL: {self.sum_fuel/self.session_ticks:.2f} L/h")
         self.total_wear_lbl.setText(f"WEAR: {self.sum_wear:.5f}")
 
-        # 3. Pełna linia logów (przywrócona)
+        # 3. Logika Coachingowa (Naprawione porównania)
+        warnings = []
+        if curr_rpm > self.rpm_gauge.redline:
+            warnings.append("High RPM detected!")
+        if curr_temp > 105:
+            warnings.append("Engine temperature rising!")
+
+        # 4. Przygotowanie cech (Features) dla modelu
+        # Dodajemy aktualne wartości do historii (okno 30s przy 30Hz to ok. 900 próbek)
+        self.history_rpm.append(curr_rpm)
+        self.history_temp.append(curr_temp)
+        self.history_throttle.append(curr_throttle)
+        
+        if len(self.history_rpm) > 900:
+            self.history_rpm.pop(0)
+            self.history_temp.pop(0)
+            self.history_throttle.pop(0)
+
+        # Obliczamy statystyki (wymagane przez Twoje FEATURE_COLUMNS)
+        import numpy as np
+        
+        # Delta wear (co 60 sekund/1800 ticków dla uproszczenia)
+        wear_delta = curr_wear - self.last_wear_60s
+        if self.session_ticks % 1800 == 0:
+            self.last_wear_60s = curr_wear
+
+        features = {
+            "rpm_avg_30s": np.mean(self.history_rpm),
+            "rpm_std_30s": np.std(self.history_rpm),
+            "rpm_delta_30s": self.history_rpm[-1] - self.history_rpm[0],
+            "coolant_temp_c_avg_30s": np.mean(self.history_temp),
+            "coolant_temp_c_delta_30s": self.history_temp[-1] - self.history_temp[0],
+            "throttle_avg_30s": np.mean(self.history_throttle),
+            "throttle_std_30s": np.std(self.history_throttle),
+            "wear_engine_delta_60s": wear_delta
+        }
+        
+        # Predykcja (tylko jeśli mamy już trochę danych w historii)
+        # --- DEBUGOWANIE MODELU ---
+        if len(self.history_rpm) > 10:
+            # Obliczamy statystyki
+            import numpy as np
+            rpm_avg = np.mean(self.history_rpm)
+            temp_avg = np.mean(self.history_temp)
+            wear_delta = curr_wear - self.last_wear_60s
+            
+            # Tworzymy słownik dokładnie tak, jak model go oczekuje
+            features = {
+                "rpm_avg_30s": rpm_avg,
+                "rpm_std_30s": np.std(self.history_rpm),
+                "rpm_delta_30s": self.history_rpm[-1] - self.history_rpm[0],
+                "coolant_temp_c_avg_30s": temp_avg,
+                "coolant_temp_c_delta_30s": self.history_temp[-1] - self.history_temp[0],
+                "throttle_avg_30s": np.mean(self.history_throttle),
+                "throttle_std_30s": np.std(self.history_throttle),
+                "wear_engine_delta_60s": wear_delta
+            }
+            
+            # Wypisz dane wejściowe do konsoli co 30 ticków (raz na sekundę przy 30Hz), 
+            # żeby nie zaspamować konsoli
+            if self.session_ticks % 30 == 0:
+                print("-" * 30)
+                print(f"DEBUG MODEL INPUT:")
+                print(f"  AVG RPM: {rpm_avg:.1f} | TEMP: {temp_avg:.1f}")
+                print(f"  WEAR DELTA: {wear_delta:.8f}")
+                print(f"  BUF SIZE: {len(self.history_rpm)}")
+
+            # Prawdziwa predykcja
+            predicted_health = self.coaching_engine.predict_health(features)
+            
+            if self.session_ticks % 30 == 0:
+                print(f"  MODEL PREDICTION: {predicted_health:.2f}")
+
+            # Wyślij do UI
+            self.coaching_panel.update_coaching(predicted_health, warnings)
+
+        # 5. Logi (używamy zmiennych zamiast .get() w kółko)
         line = (
             f"[{raw_state.step:05d}] "
-            f"RPM={e.get('engine_rpm', 0):.0f} | "
-            f"SPD={spd:.1f} | "
-            f"TEMP={t.get('coolant_temp_c', 0):.1f} | "
-            f"FUEL={fuel:.1f} | "
-            f"GEAR={g.get('current_gear', 0)} | "
-            f"PEDAL={d.get('pedal', 0):.2f} "
-            f"THR={d.get('throttle', 0):.2f} "
-            f"RATE={d.get('throttle_rate', 0):.2f} | "
-            f"WEAR={wear:.5f}"
+            f"RPM={curr_rpm:.0f} | SPD={curr_spd:.1f} | TEMP={curr_temp:.1f} | "
+            f"FUEL={curr_fuel:.1f} | GEAR={g_dict.get('current_gear', 0)} | "
+            f"THR={curr_throttle:.2f} | WEAR={curr_wear:.5f}"
         )
         self.log_signal.emit(line)
 
@@ -285,10 +380,10 @@ class MainWindow(QWidget):
         self.rpm_gauge.set_redline(e.get("redline_rpm", e.get("max_rpm") * 0.9))
         info_text = (
             f"<b>Model:</b> {self.car_profile.get('name')}<br>"
-            f"<b>Moc:</b> {e.get('max_power_kw')} kW<br>"
-            f"<b>Moment:</b> {e.get('max_torque_nm')} Nm<br>"
-            f"<b>Masa:</b> {v.get('mass_kg')} kg<br>"
-            f"<b>Bak:</b> {v.get('fuel_tank_l')} L"
+            f"<b>Power:</b> {e.get('max_power_kw')} kW<br>"
+            f"<b>Torgue:</b> {e.get('max_torque_nm')} Nm<br>"
+            f"<b>Weight:</b> {v.get('mass_kg')} kg<br>"
+            f"<b>Tank:</b> {v.get('fuel_tank_l')} L"
         )
         self.car_info_label.setText(info_text)
 

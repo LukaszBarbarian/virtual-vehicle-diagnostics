@@ -27,6 +27,7 @@ class SimulationRuntime:
 
         self._kafka = kafka
         self._bootstrapped = False
+        self.current_wear_accumulator = 0.0
 
     # =====================================================
     # BOOTSTRAP (NO TIME FLOW)
@@ -60,6 +61,9 @@ class SimulationRuntime:
             env_spec
         )
 
+        if self.current_wear_accumulator > 0:
+            self.sim.wear.state.engine_wear = self.current_wear_accumulator
+
         # --- STATE → EVENTS ---
         publisher = KafkaEventPublisher(
             kafka=self._kafka,
@@ -71,12 +75,15 @@ class SimulationRuntime:
         driver_service = DriverService(self.sim.driver)
         self.driver_listener = DriverKafkaListener(
             kafka=self._kafka,
-            driver_service=driver_service
+            driver_service=driver_service,
+            simulation_id=self.sim.simulation_id # Przekazujemy ID sesji
         )
         self.driver_listener.start()
 
         # --- ENGINE (STOPPED) ---
         self.engine = SimulationEngine(self.sim)
+
+        
 
         self._bootstrapped = True
         return self
@@ -97,7 +104,17 @@ class SimulationRuntime:
     # SHUTDOWN
     # =====================================================
     def shutdown(self):
+        """
+        Saves the current physical state before destroying the simulation objects.
+        """
         self.stop_engine_loop()
+
+        if self.sim:
+            # ZAPISUJEMY STAN: Pobieramy aktualne zużycie z modułu fizyki
+            # zanim ustawimy self.sim = None
+            self.current_wear_accumulator = self.sim.wear.state.engine_wear
+            
+            self.sim.state_bus.clear_subscribers()
 
         if self.driver_listener:
             self.driver_listener.stop()
