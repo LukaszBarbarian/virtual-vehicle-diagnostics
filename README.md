@@ -11,7 +11,8 @@ This project simulates a vehicle in real time (engine, gearbox, thermals, wear, 
 
 The architecture follows a **Bronze–Silver–Gold** data lake pattern and is intentionally built to resemble real-world data engineering systems.
 
-<img width="1722" height="511" alt="image" src="https://github.com/user-attachments/assets/e011aa27-1e0f-42ed-879c-f11ec0053348" />
+<img width="1154" height="824" alt="image" src="https://github.com/user-attachments/assets/a92f47c9-a2b3-44b6-a77b-2bd9f35497fa" />
+
 
 ---
 
@@ -219,4 +220,5 @@ This project demonstrates:
 ## 👋 Author
 
 Built as a personal portfolio project with focus on correctness, clarity, and real-world applicability.
+
 
