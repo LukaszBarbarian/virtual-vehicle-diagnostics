@@ -1,6 +1,11 @@
-# 🚗 Vehicle Simulation & Streaming Pipeline
+## 🏎️ Simulator & Model Logic
 
-A modular vehicle simulation system with real-time streaming, automated Medallion architecture (Bronze-Silver-Gold), and integrated Machine Learning training pipeline.
+### 🕹️ Vehicle Simulator (Physics-Based)
+The simulator, built with **PySide6**, does more than just emit data; it mimics a real-world driving environment:
+* **Physics Engine**: Calculates real-time relationships between RPM, Torque, Gear Ratios, and Speed.
+* **Thermal Dynamics**: Simulates engine and brake temperature fluctuations based on load and environmental factors.
+* **Driver Profiles**: Supports multiple profiles (e.g., Aggressive, Eco, Safe) that change how the vehicle is handled.
+* **Event-Driven**: Emits high-frequency telemetry (approx. 10-50Hz) to Kafka, ensuring a realistic stream of "noisy" real-world data.
 
 <img width="1154" height="824" alt="image" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
 
@@ -55,6 +60,36 @@ The pipeline includes an automated training module designed to classify driving 
 
       
 * **Data Handling**: Automated conversion from Spark DataFrames to Pandas for optimized local training after Gold-layer aggregation.
+---
+
+## ⚡ Real-Time Inference Engine
+
+The project features a live AI inference system (`AIInferenceEngine`) that evaluates driving behavior every second using a sliding window approach.
+
+### 🧠 How the AI "Thinks"
+Unlike simple rule-based systems, our engine uses a **10-second rolling window** (300 samples at 30Hz) to understand context.
+* **Sliding Window Buffer**: A `deque` collection stores the last 10 seconds of telemetry, allowing the model to analyze trends rather than just momentary spikes.
+* **Feature Extraction**: On every prediction tick, the engine calculates:
+    * **`rpm_std_10s`**: High variability in RPM often indicates aggressive downshifting or erratic acceleration.
+    * **`power_factor`**: A derived metric (RPM × Load) representing the instantaneous stress on the powertrain.
+    * **`throttle_avg_10s`**: Distinguishes between a quick overtake and sustained aggressive throttle usage.
+
+### 🚦 Driving Style Classification
+The engine compares the current driving pattern against the trained **Random Forest** model to output:
+* **`NORMAL`**: Stable RPMs, moderate load, and smooth gear transitions.
+* **`AGGRESSIVE`**: Triggered when the probability of aggressive behavior (e.g., high `load_max_10s` and erratic `rpm_range`) exceeds 50%.
+* **Confidence Score**: The system provides a percentage-based score (e.g., "85% Aggressive") to indicate the model's certainty.
+
+
+
+---
+
+## 🧩 Core Components Deep Dive
+
+* **`AIInferenceEngine`**: 
+    * **`add_sample()`**: Feeds real-time data from the PySide6 UI into the buffer.
+    * **`get_prediction()`**: Triggers the feature engineering and MLflow model scoring.
+* **`MLflow Integration`**: Models are loaded directly via `mlflow.sklearn.load_model(model_uri)`, allowing the UI to always use the "latest" or a specifically tagged "production" model version.
 
 ---
 
@@ -141,4 +176,5 @@ It is a leading tool for **Data Quality (DQ)**. Instead of just checking if a pi
 
 👋 **Author**
 Built as a professional portfolio project focusing on high-load data engineering patterns, clean architecture, and ML integration.
+
 
