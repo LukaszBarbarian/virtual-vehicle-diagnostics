@@ -49,7 +49,8 @@ The pipeline includes an automated training module designed to classify driving 
     * Model artifacts (serialized `.pkl`).
     * Feature importance (analyzing factors like `power_factor` and thermal trends).
 
- ![Uploading image.png…]()
+<img width="1812" height="455" alt="image" src="https://github.com/user-attachments/assets/1f265cda-ffa3-4f7e-a6da-e57bb9a1007c" />
+
  
 
       
@@ -140,3 +141,4 @@ It is a leading tool for **Data Quality (DQ)**. Instead of just checking if a pi
 
 👋 **Author**
 Built as a professional portfolio project focusing on high-load data engineering patterns, clean architecture, and ML integration.
+
