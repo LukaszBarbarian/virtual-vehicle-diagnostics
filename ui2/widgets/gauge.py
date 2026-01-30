@@ -4,6 +4,9 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont
 from PySide6.QtCore import Qt, QRectF
 
 class CircularGauge(QWidget):
+    """
+    A custom circular gauge widget for displaying automotive-style metrics like RPM or speed.
+    """
     def __init__(
         self,
         label: str,
@@ -12,9 +15,12 @@ class CircularGauge(QWidget):
         redline: float | None = None,
         major_step: float | None = None,
         label_formatter=None,
-        scale_font_size: int = 9,          # ⬅ NOWE
-        arc_width: int = 10                # ⬅ NOWE
+        scale_font_size: int = 9,
+        arc_width: int = 10
     ):
+        """
+        Initializes the gauge with range settings, styling properties, and angular constraints.
+        """
         super().__init__()
 
         self.label = label
@@ -30,42 +36,42 @@ class CircularGauge(QWidget):
         self.setMinimumSize(220, 220)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # 0 deg is at 3 o'clock, clockwise positive
         self.start_angle = 135
         self.span_angle = 270 
 
-    # ==================================================
-    # API (Restored methods)
-    # ==================================================
     def set_value(self, v: float):
-        """Sets the current value and triggers a repaint."""
+        """
+        Updates the current needle position within the defined range and refreshes the display.
+        """
         self.value = max(self.min, min(self.max, v))
         self.update()
 
     def set_range(self, min_val: float, max_val: float):
-        """Updates the gauge range and recalculates steps."""
+        """
+        Redefines the minimum and maximum scale limits and recalculates step increments.
+        """
         self.min = min_val
         self.max = max_val
-        # Recalculate major step if it wasn't fixed
         self.major_step = (max_val - min_val) / 6
         self.update()
 
     def set_redline(self, redline: float | None):
-        """Updates the redline threshold."""
+        """
+        Configures the threshold where the gauge transition to the red warning zone.
+        """
         self.redline = redline
         self.update()
 
-    # ==================================================
-    # PAINT METHODS (Automotive Logic)
-    # ==================================================
     def paintEvent(self, _):
+        """
+        Coordinates the drawing sequence, including scaling, arcs, ticks, needle, and text.
+        """
         with QPainter(self) as painter:
             painter.setRenderHint(QPainter.Antialiasing)
 
             side = min(self.width(), self.height())
             painter.translate(self.width() / 2, self.height() / 2)
             
-            # Scale everything to a 200x200 coordinate system
             scale = side / 250.0
             painter.scale(scale, scale)
 
@@ -77,6 +83,9 @@ class CircularGauge(QWidget):
             self._draw_central_text(painter)
 
     def _draw_arcs(self, painter, rect):
+        """
+        Renders the color-coded background arcs (green, yellow, red) based on the current range.
+        """
         start_qt = -self.start_angle * 16
 
         def span(val_from, val_to):
@@ -93,26 +102,24 @@ class CircularGauge(QWidget):
         pen.setCapStyle(Qt.FlatCap)
         pen.setWidth(self.arc_width)
 
-        # GREEN
         pen.setColor(QColor("#2ecc71"))
         painter.setPen(pen)
         painter.drawArc(rect, start_qt, span(self.min, yellow_start))
 
-        # YELLOW
         pen.setColor(QColor("#f1c40f"))
         painter.setPen(pen)
         painter.drawArc(rect, start_qt + span(self.min, yellow_start), span(yellow_start, red_start))
 
-        # RED
         pen.setColor(QColor("#e74c3c"))
         painter.setPen(pen)
         painter.drawArc(rect, start_qt + span(self.min, red_start), span(red_start, self.max))
 
     def _draw_ticks_and_labels(self, painter):
-        """Draws the scale markings and numbers."""
+        """
+        Draws the graduation marks and numerical labels around the gauge perimeter.
+        """
         painter.save()
         
-        # Calculate how many steps to draw
         if self.major_step <= 0: return
         steps = int((self.max - self.min) / self.major_step)
         angle_per_unit = self.span_angle / (self.max - self.min) if self.max != self.min else 0
@@ -124,13 +131,11 @@ class CircularGauge(QWidget):
             painter.save()
             painter.rotate(angle)
             
-            # Tick line
             painter.setPen(QPen(Qt.white, 2))
             painter.drawLine(85, 0, 95, 0)
             
-            # Label
             painter.translate(70, 0)
-            painter.rotate(-angle) # Keep text horizontal
+            painter.rotate(-angle)
             
             painter.setFont(QFont("Arial", self.scale_font_size, QFont.Bold))
             text = self.label_formatter(val)
@@ -144,7 +149,9 @@ class CircularGauge(QWidget):
         painter.restore()
 
     def _draw_needle(self, painter):
-        """Draws the indicator needle."""
+        """
+        Renders the physical needle and central hub based on the current gauge value.
+        """
         painter.save()
         angle_per_unit = self.span_angle / (self.max - self.min) if self.max != self.min else 0
         angle = self.start_angle + (self.value - self.min) * angle_per_unit
@@ -158,7 +165,9 @@ class CircularGauge(QWidget):
         painter.restore()
 
     def _draw_central_text(self, painter):
-        """Draws the numerical value and label."""
+        """
+        Displays the digital value readout and the descriptive label in the center of the gauge.
+        """
         painter.setPen(Qt.white)
         painter.setFont(QFont("Arial", 14, QFont.Bold))
         painter.drawText(QRectF(-50, 35, 100, 30), Qt.AlignCenter, str(int(self.value)))

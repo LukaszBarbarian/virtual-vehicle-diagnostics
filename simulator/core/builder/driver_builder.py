@@ -4,8 +4,14 @@ from simulator.core.models.model_specification import DriverSpecification
 from simulator.modules.driver import DriverModule, DriverState
 
 class DriverBuilder:
+    """
+    Factory class responsible for creating and configuring the driver module instance.
+    """
     @staticmethod
     def build(spec: DriverSpecification) -> DriverModule:
+        """
+        Constructs a DriverModule with initial states and applies configuration from the provided specification.
+        """
         driver = DriverModule(
             DriverState(
                 throttle=0.0,

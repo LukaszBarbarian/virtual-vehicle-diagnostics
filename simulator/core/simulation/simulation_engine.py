@@ -2,14 +2,20 @@ import threading
 import time
 
 class SimulationEngine:
+    """
+    Manages the background execution thread for the simulation's physical calculations.
+    """
     def __init__(self, sim):
+        """
+        Initializes the engine with a reference to the simulation core.
+        """
         self.sim = sim
         self.running = False
         self._thread = None
 
     def start_loop(self, dt: float):
         """
-        Starts the simulation physical engine loop in a separate background thread.
+        Launches the simulation loop in a dedicated background thread to maintain real-time performance.
         """
         if self.running:
             return
@@ -24,7 +30,7 @@ class SimulationEngine:
 
     def _run(self, dt):
         """
-        Internal execution loop that performs physics steps.
+        The internal loop that triggers physics steps at defined intervals until stopped.
         """
         while self.running:
             self.sim.step(dt)
@@ -32,7 +38,7 @@ class SimulationEngine:
 
     def stop_loop(self):
         """
-        Safely halts the simulation engine execution.
+        Signals the execution thread to terminate and waits for it to finish gracefully.
         """
         self.running = False
         if self._thread:

@@ -4,6 +4,9 @@ from simulator.core.models.model_specification import ThermalSpecification
 
 @dataclass
 class ThermalState(BaseState):
+    """
+    Internal state for tracking fluid temperatures and cooling system actuation.
+    """
     coolant_temp_c: float
     oil_temp_c: float
     fan_active: bool
@@ -11,6 +14,9 @@ class ThermalState(BaseState):
 
 @dataclass
 class ThermalInput(BaseInput):
+    """
+    Environmental and mechanical inputs affecting the vehicle's heat balance.
+    """
     heat_kw: float
     vehicle_speed: float
     ambient_temp_c: float
@@ -18,6 +24,9 @@ class ThermalInput(BaseInput):
 
 @dataclass
 class ThermalOutput(BaseOutput):
+    """
+    Resulting thermal telemetry shared with other modules and the state bus.
+    """
     coolant_temp_c: float
     oil_temp_c: float
     fan_active: bool
@@ -25,9 +34,12 @@ class ThermalOutput(BaseOutput):
 class ThermalModule(BaseModule):
     """
     Simulates engine thermal dynamics, including heat transfer between 
-    coolant, oil, and ambient air.
+    coolant, oil, and ambient air based on airflow and component specs.
     """
     def __init__(self, initial_state: ThermalState):
+        """
+        Initializes the thermal module with default state and output containers.
+        """
         self.state = initial_state
         self.input = None
         self.output = ThermalOutput(
@@ -37,8 +49,10 @@ class ThermalModule(BaseModule):
         )
 
     def apply_config(self, cfg: ThermalSpecification):
+        """
+        Maps the technical thermal specification to internal control variables and physical coefficients.
+        """
         self.spec = cfg
-        # Mapping config to internal variables
         self.thermostat_open_temp = cfg.thermostat_open_temp
         self.fan_on_temp = cfg.fan_on_temp
         self.fan_off_temp = cfg.fan_off_temp
@@ -48,15 +62,17 @@ class ThermalModule(BaseModule):
         self.oil_response_rate = cfg.oil_response_rate
 
     def update(self, dt: float):
+        """
+        Updates temperature states by calculating heat entry from the engine and dissipation via airflow.
+        """
         i = self.input
         s = self.state
-
         v_mps = i.vehicle_speed / 3.6
         
-        # 1. Airflow logic
+        # Calculate airflow from vehicle movement and fan operation
         ram_air = v_mps * self.airflow_coeff
         
-        # Fan control logic
+        # Hysteresis-based fan control
         if s.coolant_temp_c > self.fan_on_temp:
             s.fan_active = True
         elif s.coolant_temp_c < self.fan_off_temp:
@@ -65,20 +81,19 @@ class ThermalModule(BaseModule):
         fan_air = 5.0 if s.fan_active else 0.0
         total_airflow = (ram_air + fan_air) * i.cooling_efficiency
 
-        # 2. Coolant Heat Balance
+        # Coolant heat balance calculation
         heat_in = i.heat_kw * self.heat_to_coolant_ratio
         
-        # Cooling efficiency increases when thermostat is open
+        # Simulate thermostat opening behavior limiting cooling at low temps
         thermostat_factor = 1.0 if s.coolant_temp_c > self.thermostat_open_temp else 0.1
         cooling_power = total_airflow * (s.coolant_temp_c - i.ambient_temp_c) * self.cooling_coeff * 50.0
         
         net_coolant_heat = heat_in - (cooling_power * thermostat_factor)
         
-        # Temperature integration
+        # Integrate coolant temperature change
         s.coolant_temp_c += (net_coolant_heat * dt) / s.thermal_mass
         
-        # 3. Oil Temperature (follows coolant with delay and friction heat)
-        # Oil is usually 10-20 degrees hotter than coolant under load
+        # Oil temperature logic - follows coolant with lag and heat based on engine load
         target_oil_temp = s.coolant_temp_c + (i.heat_kw * 0.5)
         s.oil_temp_c += (target_oil_temp - s.oil_temp_c) * self.oil_response_rate * dt
 

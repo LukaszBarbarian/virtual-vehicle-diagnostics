@@ -1,16 +1,21 @@
 from pyspark.sql import SparkSession
 from delta import configure_spark_with_delta_pip
 import os
-
 from app.app_config import AppConfig
 
-
 class SparkSessionFactory:
+    """
+    Factory responsible for creating and configuring SparkSession instances.
+    Supports both local development and cloud integration with Delta Lake and Azure Storage.
+    """
 
     @staticmethod
     def create(app_name: str) -> SparkSession:
+        """
+        Builds a SparkSession with Delta Lake extensions and required cloud storage configurations.
+        Environment variable SPARK_MODE determines the execution context.
+        """
         mode = os.getenv("SPARK_MODE", "local")
-
         builder = SparkSession.builder.appName(app_name)
 
         if mode == "local":
@@ -18,49 +23,30 @@ class SparkSessionFactory:
                 builder
                 .master("local[*]")
                 .config("spark.jars", AppConfig.ALL_JARS)
-
-                # # 🔑 PYTHON – DRIVER
-                # .config("spark.pyspark.python", AppConfig.PYTHON_EXEC)
-                # .config("spark.pyspark.driver.python", AppConfig.PYTHON_EXEC)
-
-                # 🔑 PYTHON – EXECUTORS (BRAKUJĄCE!)
+                
+                # Ensure Python environment consistency across Driver and Executors
                 .config("spark.executorEnv.PYSPARK_PYTHON", AppConfig.PYTHON_EXEC)
                 .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", AppConfig.PYTHON_EXEC)
 
-                # Azure ADLS
+                # Azure Data Lake Storage (ADLS) connectivity using Shared Key authentication
                 .config(
                     f"fs.azure.account.key.{AppConfig.STORAGE_ACCOUNT}.dfs.core.windows.net",
                     AppConfig.STORAGE_ACCOUNT_KEY
                 )
                 .config(
-                    "spark.hadoop.fs.azure.account.auth.type."
-                    + AppConfig.STORAGE_ACCOUNT
-                    + ".dfs.core.windows.net",
+                    f"spark.hadoop.fs.azure.account.auth.type.{AppConfig.STORAGE_ACCOUNT}.dfs.core.windows.net",
                     "SharedKey"
                 )
             )
 
-        # COMMON (local + cloud)
+        # Apply common configurations for Delta Lake support
         builder = (
             builder
-            .config(
-                "spark.sql.extensions",
-                "io.delta.sql.DeltaSparkSessionExtension"
-            )
-            .config(
-                "spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-            )
+            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         )
 
+        # Finalize the session with Delta Lake pip dependencies
         spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-        print(
-            f"✅ SparkSession ready | mode={mode} | spark={spark.version}"
-        )
-
-        # 🔍 Debug – warto zostawić na chwilę
-        print("Driver python:", spark.sparkContext.getConf().get("spark.pyspark.driver.python"))
-        print("Executor python:", spark.sparkContext.getConf().get("spark.executorEnv.PYSPARK_PYTHON"))
 
         return spark

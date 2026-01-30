@@ -5,12 +5,15 @@ from simulator.modules.vehicle import VehicleModule, VehicleState
 from simulator.modules.thermals import ThermalModule, ThermalState
 from simulator.core.models.model_specification import CarSpecification
 
-
 class CarBuilder:
+    """
+    Factory class responsible for assembling a complete Car object from a technical specification.
+    """
     @staticmethod
     def build(car_spec: CarSpecification) -> Car:
-        
-        # ================= ENGINE =================
+        """
+        Instantiates and configures all individual vehicle modules to create a functional car simulation.
+        """
         engine = EngineModule(
             EngineState(
                 engine_rpm=0.0,
@@ -22,7 +25,6 @@ class CarBuilder:
         )
         engine.apply_config(car_spec.engine)
 
-        # ================= GEARBOX =================
         gearbox = GearboxModule(
             GearboxState(
                 current_gear=1,
@@ -33,7 +35,6 @@ class CarBuilder:
         )
         gearbox.apply_config(car_spec.gearbox)
 
-        # ================= VEHICLE =================
         vehicle = VehicleModule(
             VehicleState(
                 speed_kmh=0.0,
@@ -44,7 +45,6 @@ class CarBuilder:
         )
         vehicle.apply_config(car_spec.vehicle)
 
-        # ================= THERMALS =================
         thermals = ThermalModule(
             ThermalState(
                 coolant_temp_c=20.0,

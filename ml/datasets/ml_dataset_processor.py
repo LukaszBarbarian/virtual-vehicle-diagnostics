@@ -1,35 +1,44 @@
 # ml/datasets/ml_dataset_processor.py
 from pyspark.sql import functions as F
+from pyspark.sql import DataFrame
 from pipelines.base.processor import BaseProcessor
 from app.app_config import AppConfig
 from ml.datasets.feature_config import FEATURE_COLUMNS, TARGET_COLUMN, META_COLUMNS
 
 class MLDatasetProcessor(BaseProcessor):
     """
-    Prepares the final flat dataset for ML. 
-    Filters out records with missing target values.
+    Final data preparation stage for Machine Learning. 
+    Filters data, ensures target availability, and exports to a flat Parquet format.
     """
 
-    def read(self):
+    def read(self) -> DataFrame:
+        """
+        Reads the curated feature set from the Gold Delta table.
+        """
         return (
             self.spark.read
             .format("delta")
-            .load(AppConfig.GOLD_FEATURES_PATH) # Zmieniona ścieżka na Gold
+            .load(AppConfig.GOLD_FEATURES_PATH)
         )
 
-    def transform(self, df):
-        # We ensure target column is not null (due to the 30s look-ahead window)
+    def transform(self, df: DataFrame) -> DataFrame:
+        """
+        Removes records where the target label is null. 
+        Note: Target may be null at the end of a simulation due to the look-ahead window.
+        """
         return df.filter(F.col(TARGET_COLUMN).isNotNull())
 
-    def process(self, df):
+    def process(self, df: DataFrame) -> DataFrame:
         """
-        Selects only relevant columns for the ML model.
+        Prunes the dataset to include only metadata, input features, and the target label.
         """
         selected_cols = META_COLUMNS + FEATURE_COLUMNS + [TARGET_COLUMN]
         return df.select(*selected_cols)
 
-    def write(self, df):
-        """Saves the flat dataset as Parquet for efficient ML training."""
+    def write(self, df: DataFrame):
+        """
+        Persists the finalized dataset as a Parquet file for high-performance training consumption.
+        """
         (
             df.write
             .format("parquet")

@@ -4,6 +4,9 @@ from simulator.core.models.model_specification import GearboxSpecification
 
 @dataclass
 class GearboxState(BaseState):
+    """
+    Internal state of the gearbox tracking the current gear, ratios, and the shifting process status.
+    """
     current_gear: int
     gear_ratio: float
     gearbox_temp_c: float
@@ -14,6 +17,9 @@ class GearboxState(BaseState):
 
 @dataclass
 class GearboxInput(BaseInput):
+    """
+    Input signals required for gearbox automation, including engine feedback and driver intent.
+    """
     engine_rpm: float
     throttle: float
     vehicle_speed: float
@@ -21,19 +27,30 @@ class GearboxInput(BaseInput):
 
 @dataclass
 class GearboxOutput(BaseOutput):
+    """
+    Resulting gearbox state broadcast to the engine and vehicle modules.
+    """
     current_gear: int
     gear_ratio: float
     shift_event: bool
 
 class GearboxModule(BaseModule):
-    """Automatic gearbox with shift delay and clutch management."""
+    """
+    Simulates an automatic transmission with programmable shift points, shift delays, and clutch synchronization.
+    """
     def __init__(self, initial_state: GearboxState):
+        """
+        Initializes the gearbox with state and internal timers for shift management.
+        """
         self.state = initial_state
         self.shift_timer = 0.0
         self.shift_cooldown_timer = 0.0
         self._target_gear = initial_state.current_gear
 
     def apply_config(self, cfg: GearboxSpecification):
+        """
+        Maps the technical specification to internal ratios and shift thresholds.
+        """
         self.spec = cfg
         self.final_drive = cfg.final_drive
         self.gear_ratios = {i+1: g for i, g in enumerate(cfg.gears)}
@@ -44,13 +61,16 @@ class GearboxModule(BaseModule):
         self.shift_cooldown = 0.5
 
     def update(self, dt: float):
+        """
+        Main logic loop handling the state machine for gear selection and mechanical transitions.
+        """
         i = self.input
         s = self.state
 
-        # Update Timers
-        if self.shift_cooldown_timer > 0: self.shift_cooldown_timer -= dt
+        if self.shift_cooldown_timer > 0:
+            self.shift_cooldown_timer -= dt
 
-        # 1. Shifting Logic (Clutch Disengaged)
+        # Stage 1: Shifting (Clutch is disengaged, mechanical gear swap)
         if s.shifting:
             self.shift_timer -= dt
             s.shift_event = True
@@ -60,7 +80,7 @@ class GearboxModule(BaseModule):
                 s.shift_event = False
                 self.shift_cooldown_timer = self.shift_cooldown
         
-        # 2. Preparing Logic (Clutch Still Engaged)
+        # Stage 2: Preparation (Decision made, driver/system preparing for shift)
         elif s.preparing_shift:
             self.shift_timer -= dt
             if self.shift_timer <= 0:
@@ -68,7 +88,7 @@ class GearboxModule(BaseModule):
                 s.shifting = True
                 self.shift_timer = self.actual_shift_time
         
-        # 3. Decision Logic
+        # Stage 3: Decision Logic (Monitoring RPM and kickdown triggers)
         else:
             target = s.current_gear
             if i.engine_rpm > self.upshift_rpm and s.current_gear < max(self.gear_ratios.keys()):
@@ -81,7 +101,7 @@ class GearboxModule(BaseModule):
                 self.shift_timer = self.shift_delay
                 s.preparing_shift = True
 
-        # Calculate Final Ratio
+        # Compute the final mechanical advantage
         base_ratio = self.gear_ratios.get(s.current_gear, 0.0)
         s.gear_ratio = base_ratio * self.final_drive
 

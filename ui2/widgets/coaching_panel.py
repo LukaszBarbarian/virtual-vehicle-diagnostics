@@ -1,8 +1,13 @@
 from PySide6.QtWidgets import QProgressBar, QFrame, QVBoxLayout, QLabel
 
-
 class CoachingPanel(QFrame):
+    """
+    UI panel that displays real-time AI driving coaching feedback and progress bars.
+    """
     def __init__(self):
+        """
+        Initializes the panel layout, visual styles, and default state of the widgets.
+        """
         super().__init__()
         self.setFixedWidth(210)
         self.setStyleSheet(
@@ -32,7 +37,6 @@ class CoachingPanel(QFrame):
         )
         layout.addWidget(self.advice_label)
 
-        # ---- STYLES ----
         self._styles = {
             "neutral": """
                 QProgressBar { border: 1px solid #444; background: #1e1e1e; }
@@ -52,38 +56,32 @@ class CoachingPanel(QFrame):
             """
         }
 
-
         self._current_style = None
         self._last_text = None
 
-        # start in neutral
         self._apply_style("neutral")
         self.score_bar.setValue(0)
 
-    # --------------------------------------------------
-
     def update_coaching(self, score: float, style_key: str, status_text: str):
         """
-        Updates the widget with pre-processed data.
+        Updates the UI components with the provided driving score, visual style, and advice text.
         """
-        # Ustawiamy pasek (0-100)
         self.score_bar.setValue(int(score))
-        
-        # Ustawiamy kolor na podstawie klucza (neutral, calm, normal, aggressive)
         self._apply_style(style_key)
-        
-        # Ustawiamy gotowy tekst wstrzyknięty z zewnątrz
         self.advice_label.setText(status_text)
 
-
-    # --------------------------------------------------
-
     def _apply_style(self, style_name: str):
+        """
+        Applies a specific stylesheet to the progress bar based on the driving style key.
+        """
         if style_name != self._current_style:
             self.score_bar.setStyleSheet(self._styles[style_name])
             self._current_style = style_name
 
     def _set_text(self, text: str):
+        """
+        Updates the advice label text only if the new content differs from the previous one.
+        """
         if text != self._last_text:
             self.advice_label.setText(text)
             self._last_text = text

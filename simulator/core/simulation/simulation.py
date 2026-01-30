@@ -18,8 +18,10 @@ from simulator.modules.vehicle import VehicleInput, VehicleModule
 from simulator.modules.wear import WearInput, WearModule
 import uuid
 
-
 class Simulation:
+    """
+    The central orchestrator of the vehicle simulation, managing data flow between all mechanical and driver modules.
+    """
     def __init__(
         self,
         car_spec: CarSpecification,
@@ -27,21 +29,26 @@ class Simulation:
         wear_spec: WearSpecification,
         env_spec: EnvironmentSpecification
     ):
-        
+        """
+        Initializes the simulation by building all necessary modules and setting up the initial state.
+        """
         self.simulation_id = str(uuid.uuid4()) 
-
         self.car = CarBuilder.build(car_spec)
         self.env = env_spec
         self.driver = DriverBuilder.build(driver_spec)
-        self.wear   = WearBuilder.build(wear_spec)
-
+        self.wear = WearBuilder.build(wear_spec)
         self.init()
 
     def init(self):
+        """
+        Triggers the initialization sequence for time tracking and communication buses.
+        """
         self.init_state()
-        
 
     def init_state(self):
+        """
+        Resets simulation counters and initializes the internal StateBus for event distribution.
+        """
         self.time = 0.0
         self.step_count = 0
         self.state_bus = StateBus()
@@ -49,15 +56,15 @@ class Simulation:
     def update_modules(self, dt: float, engine: EngineModule, gearbox: GearboxModule,
                        vehicle: VehicleModule, thermals: ThermalModule,
                        wear: WearModule, driver: DriverModule):
-
-        # 1. Update Driver first to get throttle
+        """
+        Handles the sequential dependency chain of the simulation physics, updating each module's input and state.
+        """
         driver.input = DriverInput(
             engine_rpm=engine.state.engine_rpm,
             max_rpm=engine.spec.max_rpm,
         )
         driver.update(dt)
 
-        # 2. Update Gearbox to get current gear/ratio
         gearbox.input = GearboxInput(
             engine_rpm=engine.state.engine_rpm,
             throttle=driver.output.throttle,
@@ -66,7 +73,6 @@ class Simulation:
         )
         gearbox.update(dt)
 
-        # 3. Update Wear (uses previous state)
         wear.input = WearInput(
             engine_temp_c=thermals.state.coolant_temp_c,
             oil_temp_c=thermals.state.oil_temp_c,
@@ -77,7 +83,6 @@ class Simulation:
         )
         wear.update(dt)
 
-        # 4. Update Engine (uses throttle, gear and wear)
         engine.input = EngineInput(
             throttle=driver.output.throttle,
             current_gear=gearbox.state.current_gear,
@@ -93,7 +98,6 @@ class Simulation:
         )
         engine.update(dt)
 
-        # 5. Update Vehicle physics
         vehicle.input = VehicleInput(
             torque_nm=engine.output.torque_nm,
             gear_ratio=gearbox.output.gear_ratio,
@@ -103,7 +107,6 @@ class Simulation:
         )
         vehicle.update(dt)
 
-        # 6. Update Thermals
         thermals.input = ThermalInput(
             heat_kw=engine.output.heat_kw,
             vehicle_speed=vehicle.state.speed_kmh,
@@ -112,18 +115,19 @@ class Simulation:
         )
         thermals.update(dt)
 
-
-
     def step(self, dt: float):
+        """
+        Executes a single simulation step, captures the current state snapshot, and triggers a broadcast.
+        """
         if dt <= 0.0:
             return None  
         
-        engine   = self.car.engine
-        gearbox  = self.car.gearbox
-        vehicle  = self.car.vehicle
+        engine = self.car.engine
+        gearbox = self.car.gearbox
+        vehicle = self.car.vehicle
         thermals = self.car.thermals
-        wear     = self.wear
-        driver   = self.driver
+        wear = self.wear
+        driver = self.driver
 
         raw = RawSimulationState(
             simulation_id=self.simulation_id,
@@ -140,37 +144,39 @@ class Simulation:
         )
 
         self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
-
         self.print_state()
 
         if engine.state.engine_rpm > 1.0 or vehicle.state.speed_kmh > 0.1:
             self.publish(dt, raw)
 
     def publish(self, dt: float, raw: RawSimulationState):
+        """
+        Updates the simulation timeline and broadcasts the captured state to all subscribers.
+        """
         self.time += dt
         self.step_count += 1
         self.state_bus.publish(raw)
 
-
-
     def print_state(self):
-            e = self.car.engine.state
-            v = self.car.vehicle.state
-            t = self.car.thermals.state
-            g = self.car.gearbox.state
-            w = self.wear.state
-            d = self.driver.state
+        """
+        Outputs the current vital telemetry to the console for real-time monitoring.
+        """
+        e = self.car.engine.state
+        v = self.car.vehicle.state
+        t = self.car.thermals.state
+        g = self.car.gearbox.state
+        w = self.wear.state
+        d = self.driver.state
 
-
-            print(
-                f"RPM={e.engine_rpm:.0f} | "
-                f"SPD={v.speed_kmh:.1f} | "
-                f"TEMP={t.coolant_temp_c:.1f} | "
-                f"OIL={t.oil_temp_c:.1f} | "
-                f"FUEL={e.fuel_rate_lph:.1f} | "
-                f"GEAR={g.current_gear} | "
-                f"PEDAL={d.pedal:.2f} "
-                f"THR={d.throttle:.2f} "
-                f"RATE={d.throttle_rate:.2f} | "
-                f"WEAR={w.engine_wear:.3f}"
-            )
+        print(
+            f"RPM={e.engine_rpm:.0f} | "
+            f"SPD={v.speed_kmh:.1f} | "
+            f"TEMP={t.coolant_temp_c:.1f} | "
+            f"OIL={t.oil_temp_c:.1f} | "
+            f"FUEL={e.fuel_rate_lph:.1f} | "
+            f"GEAR={g.current_gear} | "
+            f"PEDAL={d.pedal:.2f} "
+            f"THR={d.throttle:.2f} "
+            f"RATE={d.throttle_rate:.2f} | "
+            f"WEAR={w.engine_wear:.3f}"
+        )
