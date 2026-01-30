@@ -19,9 +19,9 @@ class SparkSessionFactory:
                 .master("local[*]")
                 .config("spark.jars", AppConfig.ALL_JARS)
 
-                # 🔑 PYTHON – DRIVER
-                .config("spark.pyspark.python", AppConfig.PYTHON_EXEC)
-                .config("spark.pyspark.driver.python", AppConfig.PYTHON_EXEC)
+                # # 🔑 PYTHON – DRIVER
+                # .config("spark.pyspark.python", AppConfig.PYTHON_EXEC)
+                # .config("spark.pyspark.driver.python", AppConfig.PYTHON_EXEC)
 
                 # 🔑 PYTHON – EXECUTORS (BRAKUJĄCE!)
                 .config("spark.executorEnv.PYSPARK_PYTHON", AppConfig.PYTHON_EXEC)
