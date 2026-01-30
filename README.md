@@ -1,224 +1,142 @@
 # 🚗 Vehicle Simulation & Streaming Pipeline
 
-A modular vehicle simulation system with real-time streaming, data lake ingestion, and analytics-ready architecture.  
-Designed as a **portfolio-grade Data Engineering project** with clear separation of concerns and production-like patterns.
+A modular vehicle simulation system with real-time streaming, automated Medallion architecture (Bronze-Silver-Gold), and integrated Machine Learning training pipeline.
+
+<img width="1154" height="824" alt="image" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
+
 
 ---
 
 ## 🧠 Project Overview
 
-This project simulates a vehicle in real time (engine, gearbox, thermals, wear, driver input) and streams telemetry events through Kafka into a Spark-based data pipeline.
+This project simulates vehicle physics and driver behavior in real-time, streaming high-frequency telemetry data through **Kafka** into a **Spark-powered Data Lake**. 
 
-The architecture follows a **Bronze–Silver–Gold** data lake pattern and is intentionally built to resemble real-world data engineering systems.
+Unlike simple ingestion scripts, this repository implements a full **end-to-end lifecycle**:
+1. **Simulation**: Real-time telemetry (PySide6 UI).
+2. **Ingestion**: Structured Streaming into Bronze (Raw).
+3. **Processing**: Automated transformation through Silver (Cleaned) and Gold (Aggregated) layers.
+4. **Machine Learning**: Automated dataset preparation and model training.
 
-<img width="1154" height="824" alt="image" src="https://github.com/user-attachments/assets/a92f47c9-a2b3-44b6-a77b-2bd9f35497fa" />
 
-
----
-
-## 🏗️ High-Level Architecture
-
-```
-[ Streamlit UI ]
-        ↓
-[ Simulation Runtime ]
-        ↓
-[ Kafka (Event Bus) ]
-        ↓
-[ Spark Structured Streaming ]
-        ↓
-[ Azure Data Lake Gen2 ]
-        ↓
-[ Bronze Layer (raw events) ]
-```
-
-Spark runs as a **separate process** and consumes events asynchronously from Kafka.  
-The simulation is fully decoupled from analytics and storage.
 
 ---
 
-## 🧩 Key Components
+## 🏗️ System Architecture
 
-### 🎮 Simulation & UI
-- Streamlit dashboard
-- Real-time gauges (RPM, speed, temperature, fuel)
-- Throttle control
-- Start / Stop engine lifecycle
+### 📡 Data Flow
+* **Simulation (Producer)**: High-fidelity vehicle model emitting events to Kafka.
+* **Spark Ingestion**: Consumes Kafka topics and writes to **Azure Data Lake Gen2** (Bronze).
+* **Medallion Pipeline**: Orchestrated Spark jobs that promote data from Raw ➡️ Normalized ➡️ Feature sets.
+* **ML Pipeline**: Consumes Gold data to generate train/test splits and train predictive models.
 
-### ⚙️ Simulation Core
-- Engine, gearbox, vehicle physics
-- Driver behavior model
-- Environment & wear models
-- Deterministic simulation loop
-
-### 📡 Event Streaming (Kafka)
-- Simulation emits domain events (`simulation.raw`)
-- Driver commands are consumed asynchronously
-- Kafka acts as the system boundary
-
-### 🔥 Spark Streaming
-- Reads events from Kafka
-- Writes raw, immutable events to the Bronze layer
-- Uses Structured Streaming
-- Checkpointed and restart-safe
-
-### 🗄️ Data Lake (Azure ADLS Gen2)
-- Bronze layer stores raw JSON events
-- Append-only and replayable
-- Analytics-ready foundation
+### 🧩 Core Components
+* **`VehicleSimulator`**: Core logic for generating physics-based telemetry.
+* **`KafkaStreamer`**: Handles asynchronous data transmission to Kafka topics.
+* **`SilverProcessor`**: Method `process_raw_to_silver()` performs schema validation, timestamp normalization, and data cleaning.
+* **`GoldProcessor`**: Method `aggregate_telemetry()` calculates rolling averages (RPM, Temp) and creates feature buckets.
+* **`MLTrainingProcessor`**: Method `read()` loads Parquet datasets, while `process()` executes the training logic using Scikit-Learn and MLflow.
 
 ---
 
-## 🥉 Bronze Layer (Current Stage)
+## 🤖 Machine Learning Insights
 
-What is stored:
-- Raw Kafka events
-- Full JSON payloads
-- Kafka metadata (offset, partition, timestamp)
+The pipeline includes an automated training module designed to classify driving styles based on high-frequency telemetry.
 
-Why:
-- Single source of truth
-- Full replay capability
-- Decoupling of ingestion from downstream logic
+* **Model**: `RandomForestClassifier` (Scikit-Learn).
+* **Configuration**: 300 estimators, max depth of 12, and `class_weight='balanced'` to handle minority class distributions without manual weight tuning.
+* **Experiment Tracking**: Fully integrated with **MLflow**. Every run logs:
+    * Accuracy metrics.
+    * Model artifacts (serialized `.pkl`).
+    * Feature importance (analyzing factors like `power_factor` and thermal trends).
 
-Example Bronze record:
+ ![Uploading image.png…]()
+ 
 
-```json
-{
-  "kafka_ts": "2026-01-09T09:59:08",
-  "partition": 0,
-  "offset": 2934,
-  "raw_event": "{ \"event_type\": \"simulation.raw\", ... }"
-}
-```
+      
+* **Data Handling**: Automated conversion from Spark DataFrames to Pandas for optimized local training after Gold-layer aggregation.
 
 ---
 
-## ▶️ How to Run (Local Development)
+## 🥉 Medallion Layers (Current Status)
 
-### Prerequisites
+| Layer | Purpose | Format |
+| :--- | :--- | :--- |
+| **Bronze** | Raw Kafka events (Immutable) | Parquet / JSON |
+| **Silver** | Cleaned, validated, and flattened telemetry | Delta / Parquet |
+| **Gold** | Feature-engineered datasets (RPM bins, thermal trends) | Delta / Parquet |
+| **ML** | Train/Test splits and model metrics | Binary / Dataframes |
+
+---
+
+## ▶️ How to Run
+
+### 0️⃣ Prerequisites
+* Python 3.12+
+* Apache Kafka (running locally at `localhost:9092`)
+* Spark 3.x installed with Azure/Hadoop JARS
+* Active Azure Storage Account
+
+### 1️⃣ Simulation & UI
+Start the vehicle cockpit to begin streaming telemetry:
+
+```bash
+python ui2/main_window.py
 ```
-- Python 3.10+
-- Apache Kafka
-- Apache Spark
-- Azure Data Lake Storage Gen2
+
+### 2️⃣ Run Data Pipelines (Silver → Gold)
+To process raw data into analytics-ready tables:
+
+```bash
+# This triggers SilverProcessor and GoldProcessor sequentially
+python pipelines/run_pipelines.py
+```
+
+### 3️⃣ Run ML Pipeline
+To prepare datasets and train models:
+
+```bash
+# This triggers MLDatasetProcessor, MLSplitProcessor, and MLTrainingProcessor
+python ml/run_ml_training.py
 ```
 
 ---
 
-### 1️⃣ Start Kafka
+## 🔒 Security & Configuration (Refactoring Note)
 
-```
-zookeeper-server-start.sh config/zookeeper.properties
-kafka-server-start.sh config/server.properties
-```
-
-Kafka broker:
-```
-localhost:9092
-```
-
----
-
-### 2️⃣ Start Spark Streaming (Bronze Ingestion)
-
-```
-python streaming/spark/stream_processor.py
-```
-
-Consumes Kafka events and writes raw data to the Bronze layer.
-
----
-
-### 3️⃣ Start UI & Simulation
-
-```
-streamlit run ui/app.py
-```
-
----
-
-### 4️⃣ Use the Dashboard
-
-```
-- Click START ENGINE
-- Increase throttle
-- Observe real-time telemetry
-- Events are streamed to Kafka and ingested into the Bronze layer
-```
-
----
-
-## 🚀 VS Code (Optional)
-
-Use the compound launch configuration:
-
-```
-Run → START SYSTEM (UI + Spark)
-```
-
-This starts:
-- Spark Streaming job
-- Streamlit UI
-
-as two independent processes.
+The project follows production-ready security patterns:
+* **Credential Isolation**: Secrets are never hardcoded; they are managed via `python-dotenv`.
+* **Dynamic Configuration**: The `AppConfig` class builds `abfss` storage paths dynamically based on environment variables.
+* **Refactoring Path**: Designed for easy migration to **Azure Key Vault**.
 
 ---
 
 ## 🧱 Design Principles
-
-- Clear separation of concerns
-- Event-driven architecture
-- Infrastructure decoupled from domain logic
-- Restart-safe and replayable pipelines
-- Production-inspired data lake design
-
----
-
-## 🛣️ Roadmap
-
-### 🥈 Silver Layer (Next)
-- Batch processing from Bronze
-- JSON parsing and schema validation
-- Flattened, normalized Delta tables
-- Data quality and completeness checks
-
-### 🥇 Gold Layer
-- Window aggregations
-- Feature engineering
-- ML-ready datasets
-
-### 🤖 ML & Analytics
-- MLflow integration
-- Predictive models (wear, fuel usage, failures)
-- Advanced analytics
+* **Separation of Concerns**: Simulation logic is entirely decoupled from the data engineering stack.
+* **Idempotency**: Processing jobs can be re-run without duplicating data in the Lake.
+* **Production-like Setup**: Uses `abfss` protocol and Spark Session Factories instead of local file system mocks.
 
 ---
 
 ## 📌 Tech Stack
-
-- Python
-- Streamlit
-- Apache Kafka
-- Apache Spark (Structured Streaming)
-- Azure Data Lake Storage Gen2
-- Delta Lake (planned)
-
----
-
-## 🎯 Project Goal
-
-This project demonstrates:
-- Practical data engineering skills
-- Streaming and batch processing patterns
-- Clean architecture and system boundaries
-- Azure and Spark integration
-- Real-world trade-offs and design decisions
+* **Languages**: Python
+* **ML Library**: Scikit-Learn & MLflow
+* **GUI**: PySide6 (Qt)
+* **Streaming**: Apache Kafka
+* **Processing**: Apache Spark (Structured Streaming & Batch)
+* **Cloud**: Azure Data Lake Gen2
+* **Data Format**: Parquet / Delta Lake
 
 ---
 
-## 👋 Author
+## 🚀 Future Roadmap: Great Expectations
+To ensure high data quality, the next step is integrating **Great Expectations**.
 
-Built as a personal portfolio project with focus on correctness, clarity, and real-world applicability.
+### What is Great Expectations?
+It is a leading tool for **Data Quality (DQ)**. Instead of just checking if a pipeline "runs", it validates if the data itself is correct:
+* **Unit tests for data**: Defines "Expectations" (e.g., *RPM value must be between 0 and 8000*).
+* **Automated Documentation**: Generates clean reports (Data Docs) showing which data passed or failed.
+* **Silver Layer Guard**: It will act as a gatekeeper between Bronze and Silver to prevent "garbage" data from polluting the Lake.
 
 
+👋 **Author**
+Built as a professional portfolio project focusing on high-load data engineering patterns, clean architecture, and ML integration.
