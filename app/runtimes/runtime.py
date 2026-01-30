@@ -24,7 +24,7 @@ class ApplicationRuntime:
     def _initialize_spark(self):
         if self.spark_initialized:
             return
-        print("Spark: Inicjalizacja stała...")
+        print("Spark: Inicjalizacja sparka...")
         try:
             self.spark = SparkSessionFactory.create("bronze-ingestion")
             self.processor = BronzeProcessor(self.spark)

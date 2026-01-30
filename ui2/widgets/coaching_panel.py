@@ -1,70 +1,89 @@
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QPlainTextEdit, QProgressBar
-)
+from PySide6.QtWidgets import QProgressBar, QFrame, QVBoxLayout, QLabel
 
-
-from PySide6.QtWidgets import QProgressBar, QFrame
 
 class CoachingPanel(QFrame):
     def __init__(self):
         super().__init__()
-        self.setFixedWidth(200) 
-        self.setStyleSheet("background-color: #1a1a1a; border-radius: 5px; border: 1px solid #333;")
-        
+        self.setFixedWidth(210)
+        self.setStyleSheet(
+            "background-color: #121212; border: 1px solid #333; border-radius: 4px;"
+        )
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Tytuł
-        title = QLabel("LIVE COACHING")
-        title.setStyleSheet("color: #f1c40f; font-weight: bold; border: none; font-size: 10px;")
-        layout.addWidget(title)
+        layout.setSpacing(6)
+        layout.setContentsMargins(8, 8, 8, 8)
 
-        # Pasek zdrowia silnika (Engine Health)
-        self.health_bar = QProgressBar()
-        self.health_bar.setFixedHeight(15)
-        self.health_bar.setRange(0, 100)
-        self.health_bar.setValue(100)
-        self.health_bar.setStyleSheet("""
-            QProgressBar { border: 1px solid #444; border-radius: 2px; text-align: center; color: white; font-size: 9px; }
-            QProgressBar::chunk { background-color: #2ecc71; }
-        """)
-        layout.addWidget(self.health_bar)
+        self.label_main = QLabel("AI DRIVING COACH")
+        self.label_main.setStyleSheet(
+            "color: #f1c40f; font-weight: bold; font-size: 11px;"
+        )
+        layout.addWidget(self.label_main)
 
-        # Alerty i status
-        self.alerts = QLabel("Status: OK")
-        self.alerts.setWordWrap(True)
-        self.alerts.setStyleSheet("color: #95a5a6; font-size: 10px; border: none;")
-        layout.addWidget(self.alerts)
+        self.score_bar = QProgressBar()
+        self.score_bar.setFixedHeight(18)
+        self.score_bar.setRange(0, 100)
+        self.score_bar.setTextVisible(False)
+        layout.addWidget(self.score_bar)
 
-    def update_coaching(self, health_score, warnings):
+        self.advice_label = QLabel("Analyzing driving style...")
+        self.advice_label.setWordWrap(True)
+        self.advice_label.setStyleSheet(
+            "color: #ecf0f1; font-size: 10px;"
+        )
+        layout.addWidget(self.advice_label)
+
+        # ---- STYLES ----
+        self._styles = {
+            "neutral": """
+                QProgressBar { border: 1px solid #444; background: #1e1e1e; }
+                QProgressBar::chunk { background-color: #555555; }
+            """,
+            "calm": """
+                QProgressBar { border: 1px solid #444; background: #1e1e1e; }
+                QProgressBar::chunk { background-color: #2ecc71; }
+            """,
+            "normal": """
+                QProgressBar { border: 1px solid #444; background: #1e1e1e; }
+                QProgressBar::chunk { background-color: #f1c40f; }
+            """,
+            "aggressive": """
+                QProgressBar { border: 1px solid #444; background: #1e1e1e; }
+                QProgressBar::chunk { background-color: #e74c3c; }
+            """
+        }
+
+
+        self._current_style = None
+        self._last_text = None
+
+        # start in neutral
+        self._apply_style("neutral")
+        self.score_bar.setValue(0)
+
+    # --------------------------------------------------
+
+    def update_coaching(self, score: float, style_key: str, status_text: str):
         """
-        Updates the panel with new prediction and safety warnings.
-        health_score: float (0.0 - 100.0)
-        warnings: list of strings
+        Updates the widget with pre-processed data.
         """
-        # 1. Aktualizacja paska (kolor zmienia się od zielonego do czerwonego)
-        val = int(health_score)
-        self.health_bar.setValue(val)
+        # Ustawiamy pasek (0-100)
+        self.score_bar.setValue(int(score))
         
-        if val > 80:
-            color = "#2ecc71" # Zielony
-        elif val > 50:
-            color = "#f1c40f" # Żółty
-        else:
-            color = "#e74c3c" # Czerwony
-            
-        self.health_bar.setStyleSheet(f"""
-            QProgressBar {{ border: 1px solid #444; border-radius: 2px; text-align: center; color: white; font-size: 9px; }}
-            QProgressBar::chunk {{ background-color: {color}; }}
-        """)
+        # Ustawiamy kolor na podstawie klucza (neutral, calm, normal, aggressive)
+        self._apply_style(style_key)
+        
+        # Ustawiamy gotowy tekst wstrzyknięty z zewnątrz
+        self.advice_label.setText(status_text)
 
-        # 2. Aktualizacja tekstu alertów
-        if warnings:
-            # Łączymy ostrzeżenia w listę punktową
-            text = "\n".join([f"• {w}" for w in warnings])
-            self.alerts.setText(text)
-            self.alerts.setStyleSheet("color: #e74c3c; font-size: 10px; border: none; font-weight: bold;")
-        else:
-            self.alerts.setText("Status: Safe Driving")
-            self.alerts.setStyleSheet("color: #2ecc71; font-size: 10px; border: none;")
+
+    # --------------------------------------------------
+
+    def _apply_style(self, style_name: str):
+        if style_name != self._current_style:
+            self.score_bar.setStyleSheet(self._styles[style_name])
+            self._current_style = style_name
+
+    def _set_text(self, text: str):
+        if text != self._last_text:
+            self.advice_label.setText(text)
+            self._last_text = text

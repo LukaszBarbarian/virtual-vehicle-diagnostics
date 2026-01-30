@@ -1,8 +1,13 @@
-temp_threshold: 95.0
-thermal_stress_factor: 0.0002
-load_stress_factor: 0.0001
-rpm_threshold: 4500
-rpm_stress_factor: 0.000001
-
 cooling_degradation_scale: 0.4
 torque_degradation_scale: 0.35
+
+temp_threshold: 95.0
+rpm_threshold: 5000.0   # Podnieśmy próg, żeby Focus nie płakał przy 4500
+
+# Wartości, które nie zabiją auta w 5 sekund:
+thermal_stress_factor: 0.001    # Zmniejszone 5x względem poprzedniego
+load_stress_factor: 0.0005
+rpm_stress_factor: 0.0005
+
+# Skalowanie czasu (1s = 60s życia silnika)
+wear_time_scale: 60.0

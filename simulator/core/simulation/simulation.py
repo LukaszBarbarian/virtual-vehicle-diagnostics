@@ -72,7 +72,8 @@ class Simulation:
             oil_temp_c=thermals.state.oil_temp_c,
             load=vehicle.state.load,
             engine_rpm=engine.state.engine_rpm,
-            gearbox_temp_c=gearbox.state.gearbox_temp_c
+            gearbox_temp_c=gearbox.state.gearbox_temp_c,
+            throttle_rate=driver.state.throttle_rate
         )
         wear.update(dt)
 
@@ -165,6 +166,7 @@ class Simulation:
                 f"RPM={e.engine_rpm:.0f} | "
                 f"SPD={v.speed_kmh:.1f} | "
                 f"TEMP={t.coolant_temp_c:.1f} | "
+                f"OIL={t.oil_temp_c:.1f} | "
                 f"FUEL={e.fuel_rate_lph:.1f} | "
                 f"GEAR={g.current_gear} | "
                 f"PEDAL={d.pedal:.2f} "

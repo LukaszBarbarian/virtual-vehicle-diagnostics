@@ -59,22 +59,22 @@ class CircularGauge(QWidget):
     # PAINT METHODS (Automotive Logic)
     # ==================================================
     def paintEvent(self, _):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        with QPainter(self) as painter:
+            painter.setRenderHint(QPainter.Antialiasing)
 
-        side = min(self.width(), self.height())
-        painter.translate(self.width() / 2, self.height() / 2)
-        
-        # Scale everything to a 200x200 coordinate system
-        scale = side / 250.0
-        painter.scale(scale, scale)
+            side = min(self.width(), self.height())
+            painter.translate(self.width() / 2, self.height() / 2)
+            
+            # Scale everything to a 200x200 coordinate system
+            scale = side / 250.0
+            painter.scale(scale, scale)
 
-        rect = QRectF(-100, -100, 200, 200)
+            rect = QRectF(-100, -100, 200, 200)
 
-        self._draw_arcs(painter, rect)
-        self._draw_ticks_and_labels(painter)
-        self._draw_needle(painter)
-        self._draw_central_text(painter)
+            self._draw_arcs(painter, rect)
+            self._draw_ticks_and_labels(painter)
+            self._draw_needle(painter)
+            self._draw_central_text(painter)
 
     def _draw_arcs(self, painter, rect):
         start_qt = -self.start_angle * 16

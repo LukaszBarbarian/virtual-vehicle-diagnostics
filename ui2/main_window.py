@@ -5,10 +5,12 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QPlainTextEdit
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
+import numpy as np
 
 
 from app.runtimes.runtime import ApplicationRuntime
 from ml.evaluation.driver_coaching import DriverCoachingEngine
+from ml.inference.inference_processor import AIInferenceEngine
 from ui2.profile_loader import load_car_profile
 
 from ui2.widgets.coaching_panel import CoachingPanel
@@ -16,9 +18,22 @@ from ui2.widgets.control_bar import ControlBar
 from ui2.widgets.gauge import CircularGauge
 from ui2.widgets.gear_display import GearDisplay
 
+
+UI_SAMPLE_RATE_HZ = 30
+WINDOW_SEC = 30
+WINDOW_SIZE = UI_SAMPLE_RATE_HZ * WINDOW_SEC      # 900
+
+WEAR_WINDOW_SEC = 60
+WEAR_WINDOW_SIZE = UI_SAMPLE_RATE_HZ * WEAR_WINDOW_SEC  # 1800
+
+MIN_WINDOW = 150   # ~5s – start warm-up
+
+
 class MainWindow(QWidget):
     # Sygnał do bezpiecznego przesyłania logów z wątku symulacji do wątku UI
     log_signal = Signal(str)
+    coaching_update_signal = Signal(float, str, str)
+
 
     def __init__(self):
         super().__init__()
@@ -27,33 +42,43 @@ class MainWindow(QWidget):
 
         self.engine_running = False
         self.car_profile = None
-        
-        # Statystyki sesji
+
+        # Session stats
         self.session_ticks = 0
         self.sum_speed = 0.0
         self.sum_fuel = 0.0
         self.sum_wear = 0.0
+
+
+
+        self.driving_score = 100.0   # Twój realny stan "punktowy"
+        self.current_display = 0.0
+
         self.throttle_val = 0.0
         self.brake_val = 0.0
 
+        # Rolling history (30s @ 30Hz ≈ 900 samples)
         self.history_rpm = []
         self.history_temp = []
         self.history_throttle = []
-        self.last_wear_60s = 0.0
-        self.wear_timer = 0
+        self.history_wear = []
+        self.history_speed = []
 
-        self.coaching_engine = DriverCoachingEngine("mlruns/0/16f03f43054f4ed59a7a9e336ffc4527/artifacts/model")
-        
-        # Infrastruktura
+        self.last_wear_60s = 0.0
+
+        self.ai_engine = AIInferenceEngine(run_id="bd522dcba2b04dd49e49a9288b0a9eab")
+
         self.app_runtime = ApplicationRuntime("localhost:9092")
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._tick)
         self.log_signal.connect(self.log)
-        
+
         self._build_ui()
         self._load_profiles()
         self._apply_off_state()
         self._apply_start_style()
+
+        self.coaching_update_signal.connect(self.coaching_panel.update_coaching)
 
     def _build_ui(self):
         self.root = QVBoxLayout(self)
@@ -182,6 +207,7 @@ class MainWindow(QWidget):
             padding: 5px;
         """)
         self.root.addWidget(self.log_console)
+        
 
     def toggle_engine(self):
         if not self.engine_running:
@@ -192,6 +218,11 @@ class MainWindow(QWidget):
     def _start_engine(self):
         try:
             # Reset parametrów przed startem
+            self.history_rpm.clear()
+            self.history_temp.clear()
+            self.history_throttle.clear()
+            self.history_wear.clear()
+            self.history_speed.clear()
             self.session_ticks = 0
             self.sum_speed = 0.0
             self.sum_fuel = 0.0
@@ -214,124 +245,116 @@ class MainWindow(QWidget):
             self.log_signal.emit(f"ERROR: {str(e)}")
 
     def _on_simulation_state(self, raw_state):
+        """
+        Main simulation data processing loop.
+        Processes telemetry and updates AI Driver Coaching.
+        """
+        # ---------- 1. Extract data ----------
         m = raw_state.modules
-        # Wyciągamy słowniki
-        e_dict = m.get("engine", {})
-        v_dict = m.get("vehicle", {})
-        t_dict = m.get("thermals", {})
-        g_dict = m.get("gearbox", {})
-        w_dict = m.get("wear", {})
-        d_dict = m.get("driver", {})
+        e, v, t, g, w, d = [m.get(k, {}) for k in ["engine", "vehicle", "thermals", "gearbox", "wear", "driver"]]
 
-        # Wyciągamy konkretne WARTOŚCI liczbowe (to naprawia błąd porównania)
-        curr_rpm = e_dict.get("engine_rpm", 0)
-        curr_spd = v_dict.get("speed_kmh", 0)
-        curr_temp = t_dict.get("coolant_temp_c", 0)
-        curr_fuel = e_dict.get("fuel_rate_lph", 0)
-        curr_wear = w_dict.get("engine_wear", 0)
-        curr_throttle = d_dict.get("throttle", 0)
+        curr_rpm = e.get("engine_rpm", 0.0)
+        curr_spd = v.get("speed_kmh", 0.0)
+        curr_temp = t.get("coolant_temp_c", 0.0)
+        curr_fuel = e.get("fuel_rate_lph", 0.0)
+        curr_wear = w.get("engine_wear", 0.0)
+        curr_throttle = d.get("throttle", 0.0)
+        curr_gear = g.get("current_gear", 0)
 
-        # 1. Update Gauges (używamy zmiennych liczbowych)
+        # ---------- 2. Update UI Gauges ----------
         self.rpm_gauge.set_value(curr_rpm)
         self.speed_gauge.set_value(curr_spd)
         self.temp_gauge.set_value(curr_temp)
-        self.gear_display.set_gear(g_dict.get("current_gear", 0))
+        self.gear_display.set_gear(curr_gear)
         self.fuel_val_label.setText(f"{curr_fuel:.1f}")
 
-        # 2. Update Session Stats
+        # ---------- 3. Update Session Stats ----------
         self.session_ticks += 1
         self.sum_speed += curr_spd
         self.sum_fuel += curr_fuel
-        self.sum_wear = curr_wear 
 
-        self.avg_speed_lbl.setText(f"AVG SPD: {self.sum_speed/self.session_ticks:.1f} km/h")
-        self.avg_fuel_lbl.setText(f"AVG FUEL: {self.sum_fuel/self.session_ticks:.2f} L/h")
-        self.total_wear_lbl.setText(f"WEAR: {self.sum_wear:.5f}")
+        self.avg_speed_lbl.setText(f"AVG SPD: {self.sum_speed / self.session_ticks:.1f} km/h")
+        self.avg_fuel_lbl.setText(f"AVG FUEL: {self.sum_fuel / self.session_ticks:.2f} L/h")
+        self.total_wear_lbl.setText(f"WEAR: {curr_wear:.5f}")
 
-        # 3. Logika Coachingowa (Naprawione porównania)
-        warnings = []
-        if curr_rpm > self.rpm_gauge.redline:
-            warnings.append("High RPM detected!")
-        if curr_temp > 105:
-            warnings.append("Engine temperature rising!")
-
-        # 4. Przygotowanie cech (Features) dla modelu
-        # Dodajemy aktualne wartości do historii (okno 30s przy 30Hz to ok. 900 próbek)
-        self.history_rpm.append(curr_rpm)
-        self.history_temp.append(curr_temp)
-        self.history_throttle.append(curr_throttle)
-        
-        if len(self.history_rpm) > 900:
-            self.history_rpm.pop(0)
-            self.history_temp.pop(0)
-            self.history_throttle.pop(0)
-
-        # Obliczamy statystyki (wymagane przez Twoje FEATURE_COLUMNS)
-        import numpy as np
-        
-        # Delta wear (co 60 sekund/1800 ticków dla uproszczenia)
-        wear_delta = curr_wear - self.last_wear_60s
-        if self.session_ticks % 1800 == 0:
-            self.last_wear_60s = curr_wear
-
-        features = {
-            "rpm_avg_30s": np.mean(self.history_rpm),
-            "rpm_std_30s": np.std(self.history_rpm),
-            "rpm_delta_30s": self.history_rpm[-1] - self.history_rpm[0],
-            "coolant_temp_c_avg_30s": np.mean(self.history_temp),
-            "coolant_temp_c_delta_30s": self.history_temp[-1] - self.history_temp[0],
-            "throttle_avg_30s": np.mean(self.history_throttle),
-            "throttle_std_30s": np.std(self.history_throttle),
-            "wear_engine_delta_60s": wear_delta
-        }
-        
-        # Predykcja (tylko jeśli mamy już trochę danych w historii)
-        # --- DEBUGOWANIE MODELU ---
-        if len(self.history_rpm) > 10:
-            # Obliczamy statystyki
-            import numpy as np
-            rpm_avg = np.mean(self.history_rpm)
-            temp_avg = np.mean(self.history_temp)
-            wear_delta = curr_wear - self.last_wear_60s
-            
-            # Tworzymy słownik dokładnie tak, jak model go oczekuje
-            features = {
-                "rpm_avg_30s": rpm_avg,
-                "rpm_std_30s": np.std(self.history_rpm),
-                "rpm_delta_30s": self.history_rpm[-1] - self.history_rpm[0],
-                "coolant_temp_c_avg_30s": temp_avg,
-                "coolant_temp_c_delta_30s": self.history_temp[-1] - self.history_temp[0],
-                "throttle_avg_30s": np.mean(self.history_throttle),
-                "throttle_std_30s": np.std(self.history_throttle),
-                "wear_engine_delta_60s": wear_delta
-            }
-            
-            # Wypisz dane wejściowe do konsoli co 30 ticków (raz na sekundę przy 30Hz), 
-            # żeby nie zaspamować konsoli
-            if self.session_ticks % 30 == 0:
-                print("-" * 30)
-                print(f"DEBUG MODEL INPUT:")
-                print(f"  AVG RPM: {rpm_avg:.1f} | TEMP: {temp_avg:.1f}")
-                print(f"  WEAR DELTA: {wear_delta:.8f}")
-                print(f"  BUF SIZE: {len(self.history_rpm)}")
-
-            # Prawdziwa predykcja
-            predicted_health = self.coaching_engine.predict_health(features)
-            
-            if self.session_ticks % 30 == 0:
-                print(f"  MODEL PREDICTION: {predicted_health:.2f}")
-
-            # Wyślij do UI
-            self.coaching_panel.update_coaching(predicted_health, warnings)
-
-        # 5. Logi (używamy zmiennych zamiast .get() w kółko)
-        line = (
-            f"[{raw_state.step:05d}] "
-            f"RPM={curr_rpm:.0f} | SPD={curr_spd:.1f} | TEMP={curr_temp:.1f} | "
-            f"FUEL={curr_fuel:.1f} | GEAR={g_dict.get('current_gear', 0)} | "
-            f"THR={curr_throttle:.2f} | WEAR={curr_wear:.5f}"
+        # ---------- 4. AI Engine Feed ----------
+        current_load = curr_throttle * (curr_rpm / 6500.0)
+        self.ai_engine.add_sample(
+            rpm=curr_rpm,
+            throttle=curr_throttle,
+            load=current_load,
+            speed=curr_spd,
+            gear=curr_gear
         )
-        self.log_signal.emit(line)
+
+        # ---------- 5. ML Prediction & Logging ----------
+        if raw_state.step % 10 == 0:
+            try:
+                prediction = self.ai_engine.get_prediction()
+                
+                if prediction:
+                    # Dane z modelu
+                    agg_score = prediction["score"]     # 0-100%
+                    label = prediction["label"].lower()
+                    conf = prediction["confidence"]
+                    
+                    # 1. Obliczamy mnożnik zużycia (Logika w MainWindow)
+                    wear_factor = 1.0 + (agg_score / 25.0)**2
+                    
+                    # 2. Wygładzanie paska (Smoothing)
+                    self.current_display = (0.7 * self.current_display + 0.3 * agg_score)
+
+                    # 3. LOGOWANIE DO PANELU (Co ok. 1 sekundę)
+                    if raw_state.step % 30 == 0:
+                        f = self.ai_engine.last_features
+                        if f:
+                            log_msg = (f"[AI] {label.upper()} | "
+                                       f"AGG: {agg_score:.1f}% | "
+                                       f"RISK: {wear_factor:.1f}x")
+                            self.log_signal.emit(log_msg)
+
+                    # 4. PRZYGOTOWANIE DANYCH DLA WIDGETU (Wstrzykiwanie)
+                    if agg_score > 70:
+                        style_key = "aggressive"
+                        status_name = "DANGER"
+                    elif agg_score > 30:
+                        style_key = "normal"
+                        status_name = "CAUTION"
+                    else:
+                        style_key = "calm"
+                        status_name = "OPTIMAL"
+
+                    # Składamy gotowy tekst dla "głupiego" widgetu
+                    display_text = (
+                        f"STATUS: {status_name}\n"
+                        f"AI LOAD: {int(agg_score)}%\n"
+                        f"WEAR RATE: {wear_factor:.1f}x"
+                    )
+
+                    # 5. EMISJA SYGNAŁU (score, styl, gotowy_tekst)
+                    self.coaching_update_signal.emit(
+                        float(self.current_display),
+                        style_key,
+                        display_text
+                    )
+                else:
+                    # ---------- LOG WARMUP (PRZYWRÓCONY) ----------
+                    progress_val = len(self.ai_engine.buffer)
+                    progress_pct = (progress_val / 300) * 100
+                    
+                    if raw_state.step % 30 == 0:
+                        self.log_signal.emit(f"AI warming up: {progress_pct:.0f}% ({progress_val}/300 samples)")
+                    
+                    # Informacja dla widgetu o ładowaniu
+                    self.coaching_update_signal.emit(
+                        0.0, 
+                        "neutral", 
+                        f"AI is warming up...\nProgress: {progress_pct:.0f}%"
+                    )
+                    
+            except Exception as e:
+                self.log_signal.emit(f"AI UI ERROR: {e}")
+
 
     def _stop_engine(self):
         self.update_timer.stop()

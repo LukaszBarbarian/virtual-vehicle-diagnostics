@@ -14,19 +14,19 @@ class ControlBar(QWidget):
         self.update()
 
     def paintEvent(self, _):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor("#1a1a1a"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(self.rect(), 5, 5)
+        with QPainter(self) as painter:
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(QColor("#1a1a1a"))
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(self.rect(), 5, 5)
 
-        margin = 3
-        if self.horizontal:
-            w = (self.width() - (margin * 2)) * self.value
-            rect = QRectF(margin, margin, w, self.height() - (margin * 2))
-        else:
-            h = (self.height() - (margin * 2)) * self.value
-            rect = QRectF(margin, self.height() - h - margin, self.width() - (margin * 2), h)
-        
-        painter.setBrush(QColor(self.bar_color))
-        painter.drawRoundedRect(rect, 3, 3)
+            margin = 3
+            if self.horizontal:
+                w = (self.width() - (margin * 2)) * self.value
+                rect = QRectF(margin, margin, w, self.height() - (margin * 2))
+            else:
+                h = (self.height() - (margin * 2)) * self.value
+                rect = QRectF(margin, self.height() - h - margin, self.width() - (margin * 2), h)
+            
+            painter.setBrush(QColor(self.bar_color))
+            painter.drawRoundedRect(rect, 3, 3)

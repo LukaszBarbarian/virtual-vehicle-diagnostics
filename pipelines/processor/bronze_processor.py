@@ -26,7 +26,7 @@ class BronzeProcessor(BaseProcessor):
         )
 
     def write(self, df):
-        (
+        query = (
             df.writeStream
             .format("json")
             .outputMode("append")
@@ -34,3 +34,4 @@ class BronzeProcessor(BaseProcessor):
             .option("checkpointLocation", AppConfig.BRONZE_CHECKPOINT)
             .start()
         )
+        return query

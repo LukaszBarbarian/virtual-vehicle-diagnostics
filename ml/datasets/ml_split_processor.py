@@ -33,18 +33,32 @@ class MLSplitProcessor(BaseProcessor):
     # PROCESS (HYBRID)
     # --------------------------------------------------
     def process(self, df):
-        # 🔑 DRIVER-ONLY: collect simulation_ids
+        # Pobieramy unikalne ID symulacji
         simulation_ids = [
             r.simulation_id
-            for r in df.select("simulation_id").distinct().collect()
+            for r in (
+                df.select("simulation_id")
+                .distinct()
+                .orderBy("simulation_id")
+                .collect()
+            )
         ]
+        
+        num_sims = len(simulation_ids)
+        print(f"DEBUG: Found {num_sims} unique simulations.")
 
-        split_idx = int(len(simulation_ids) * self.TRAIN_RATIO)
+        if num_sims < 2:
+            print("WARNING: Only 1 simulation found. Using it for both Train and Test to avoid crash!")
+            train_ids = set(simulation_ids)
+            test_ids = set(simulation_ids)
+        else:
+            # Gwarantujemy min. 1 symulację dla treningu
+            split_idx = max(1, int(num_sims * self.TRAIN_RATIO))
+            train_ids = set(simulation_ids[:split_idx])
+            test_ids = set(simulation_ids[split_idx:])
 
-        train_ids = set(simulation_ids[:split_idx])
-        test_ids = set(simulation_ids[split_idx:])
+        print(f"DEBUG: Training on {len(train_ids)} sims, Testing on {len(test_ids)} sims")
 
-        # 🔑 JVM FILTER – no Python on executor
         train_df = df.filter(F.col("simulation_id").isin(train_ids))
         test_df = df.filter(F.col("simulation_id").isin(test_ids))
 

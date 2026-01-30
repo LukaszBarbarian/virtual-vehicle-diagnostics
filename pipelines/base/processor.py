@@ -26,4 +26,4 @@ class BaseProcessor:
         df = self.read()                
         df = self.transform(df)
         df = self.process(df)
-        self.write(df)
+        return self.write(df)

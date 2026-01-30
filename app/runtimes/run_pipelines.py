@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
 
 def run_all(spark):
-    print(f"\n🚀 Running BronzeProcessor")
-    BronzeProcessor(spark).run()
+    #print(f"\n🚀 Running BronzeProcessor")
+    #BronzeProcessor(spark).run()
 
     print(f"\n🚀 Running SilverProcessor")
     SilverProcessor(spark).run()

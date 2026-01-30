@@ -100,7 +100,8 @@ class VehicleModule(BaseModule):
             new_v_mps = 0
         
         s.speed_kmh = new_v_mps * 3.6
-        s.load = abs(net_force) / self.load_scale
+        s.load = (abs(wheel_force) / self.load_scale) + 0.05
+        s.load = min(1.0, s.load)
 
         self.output = VehicleOutput(
             speed_kmh=round(s.speed_kmh, 2),

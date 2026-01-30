@@ -39,6 +39,7 @@ class WearSpecification:
     rpm_stress_factor: float
     cooling_degradation_scale: float
     torque_degradation_scale: float
+    wear_time_scale: float
 
 
 @dataclass
