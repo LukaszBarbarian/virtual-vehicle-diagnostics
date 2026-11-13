@@ -15,11 +15,8 @@ WINDOW_SEC = 10
 WINDOW_LAG = WINDOW_SEC * TICKS_PER_SEC
 WINDOW_ROWS = WINDOW_LAG + 1
 
-# Label horizon: engine wear accumulated over the next 10 seconds
-LABEL_HORIZON_SEC = 10
-LABEL_HORIZON_TICKS = LABEL_HORIZON_SEC * TICKS_PER_SEC
-
-# Share of ticks labelled AGGRESSIVE (ticks above this percentile of future wear rate)
+# Share of ticks labelled AGGRESSIVE: ticks above this percentile of the engine wear rate
+# accumulated over the same 10-second window the features describe
 AGGRESSIVE_PERCENTILE = 0.75
 
 # Metadata used for identifying and ordering simulation snapshots
@@ -38,7 +35,9 @@ FEATURE_COLUMNS = [
     "speed_kmh",
     "rpm_range_10s",
     "current_gear",
-    "load_max_10s"
+    "load_max_10s",
+    "rpm_max_10s",
+    "oil_temp_c"
 ]
 
 # The categorical classification target (NORMAL vs AGGRESSIVE)

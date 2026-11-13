@@ -7,6 +7,7 @@ so the Silver/Gold/ML pipelines can be reproduced without driving the cockpit by
 import argparse
 import random
 import sys
+import uuid
 from pathlib import Path
 
 # Make the project root importable when the script is run directly
@@ -55,6 +56,8 @@ def run_session(kafka: KafkaService, car_profile: Path, style: str, minutes: flo
         WearProfileLoader.load(AppConfig.WEAR_PROFILE),
         EnvironmentLoader.load(AppConfig.ENVIRONMENT_PROFILE),
     )
+    # Seeded session id: the same command always produces the same data and train/test split
+    sim.simulation_id = str(uuid.UUID(int=rng.getrandbits(128), version=4))
     EventBuilder(sim.state_bus, KafkaEventPublisher(kafka, AppConfig.TOPIC_SIMULATION_RAW))
 
     for pedal, brake in pedal_plan(style, int(minutes * 60 * TICKS_PER_SEC), rng):

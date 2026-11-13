@@ -17,7 +17,9 @@ class BronzeProcessor(BaseProcessor):
             .format("kafka")
             .option("kafka.bootstrap.servers", AppConfig.KAFKA_BROKERS)
             .option("subscribe", AppConfig.TOPIC_SIMULATION_RAW)
-            .option("startingOffsets", "latest")
+            # First start reads the topic from the beginning, so ticks published before the
+            # stream subscribed are not lost; later starts resume from the checkpoint
+            .option("startingOffsets", "earliest")
             .load()
         )
     

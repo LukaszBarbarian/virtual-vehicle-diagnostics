@@ -84,7 +84,7 @@ def test_gold_labels_both_classes(silver_and_gold):
     _, _, gold = silver_and_gold
 
     assert set(gold[TARGET_COLUMN]) == {"AGGRESSIVE", "NORMAL"}
-    # Only ticks with a full past window and a full future horizon are kept
+    # Only ticks with a full 10-second history are kept
     assert gold["step"].min() == WINDOW_LAG
     assert gold[FEATURE_COLUMNS].notna().all().all()
 

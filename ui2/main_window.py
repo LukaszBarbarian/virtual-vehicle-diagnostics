@@ -277,6 +277,7 @@ class MainWindow(QWidget):
             load=curr_load,
             speed=curr_spd,
             gear=curr_gear,
+            oil_temp=t.get("oil_temp_c", 0.0),
             engine_wear=curr_wear,
         )
 

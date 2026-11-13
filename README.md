@@ -39,38 +39,46 @@ flowchart LR
 | Streaming | `streaming/`, `infra/kafka/` | Every tick is published as a versioned `simulation.raw` event; cockpit inputs travel the other way as `driver.commands`. |
 | Bronze | `pipelines/processor/bronze_processor.py` | Spark Structured Streaming from Kafka, raw events stored as JSON with checkpointing. |
 | Silver | `pipelines/processor/silver_processor.py` | Explicit schema, flattening, null and physical-range checks, de-duplication per tick. Invalid rows go to a quarantine table; data quality counts are appended to a metrics table. |
-| Gold | `pipelines/processor/gold_processor.py` | 10-second rolling features per session and the training label (see below). |
+| Gold | `pipelines/processor/gold_processor.py` | 10-second rolling features per session and the wear-rate label (see below). |
 | ML | `ml/` | Group split by `simulation_id` (no leakage between sessions), Random Forest training, metrics, feature importance and model registration in MLflow. |
 | Live inference | `ml/inference/inference_processor.py` | The cockpit keeps the last 10 seconds of ticks and scores them with the registered model every second. |
 
-## The ML problem
+## The ML problem: a virtual wear sensor
 
-**Question:** *will the next 10 seconds of driving wear the engine noticeably faster than usual?*
+A real car cannot measure how fast its engine is wearing, but it can measure RPM, load, throttle and
+temperatures. The model is a **virtual sensor**: from those observable signals it estimates whether the
+current driving is wearing the engine abnormally fast, and the cockpit's AI coach warns the driver live.
 
-- **Features** (past 10 s, `ml/datasets/feature_config.py`): average / std / range of RPM, average throttle,
-  average and max engine load, power factor (RPM × load), speed and gear.
-- **Label:** engine wear accumulated over the *next* 10 s. Ticks above the 75th percentile of that wear rate are
-  `AGGRESSIVE`, the rest `NORMAL`.
+- **Features** (last 10 s, `ml/datasets/feature_config.py`): average / std / range / max of RPM, average throttle,
+  average and max engine load, power factor (RPM × load), speed, gear and oil temperature.
+- **Label:** engine wear accumulated over the same 10 s, taken from the simulator's wear model. Windows above the
+  75th percentile of that wear rate are `AGGRESSIVE`, the rest `NORMAL`. Wear itself is never a feature.
 - **Train/serve parity:** the Gold layer (Spark window functions) and the live engine (pandas) compute the
   features from one shared definition, and a test checks that both produce identical values.
+- **No leakage between sessions:** train and test are split by `simulation_id`, never by row.
 - **Evaluation:** besides accuracy, every run logs a majority-class baseline, F1 for `AGGRESSIVE` and ROC-AUC.
-  With a 25 % positive class, "always NORMAL" already scores ~75 % accuracy, so accuracy alone says little.
+  With a ~25 % positive class, "always NORMAL" already scores ~75–80 % accuracy, so accuracy alone says little.
 
 <img width="1812" height="455" alt="MLflow runs" src="https://github.com/user-attachments/assets/1f265cda-ffa3-4f7e-a6da-e57bb9a1007c" />
 
 ### Results
 
-12 generated sessions (eco / normal / sport, Ford Focus and Lamborghini, 3 simulated minutes each),
-split by session into 14 400 training and 4 800 test rows:
+`generate_sessions.py --sessions 12 --minutes 3` (eco / normal / sport, Ford Focus and Lamborghini; seeded, so the
+same command reproduces the same data and split), split by session into 14 400 training and 4 800 test rows:
 
 | Metric | Model | Baseline (always `NORMAL`) |
 | :--- | ---: | ---: |
-| Accuracy | 0.78 | 0.75 |
-| F1 `AGGRESSIVE` | 0.46 | 0.00 |
-| ROC-AUC | 0.80 | 0.50 |
+| Accuracy | 0.90 | 0.81 |
+| F1 `AGGRESSIVE` | 0.67 | 0.00 |
+| ROC-AUC | 0.97 | 0.50 |
 
-The model ranks risky driving well (ROC-AUC 0.80) but only modestly beats the baseline on accuracy. Most
-important features: peak engine load, average throttle and power factor. See *Known limitations* for why.
+With 30 sessions the model keeps a similar margin (accuracy 0.88 vs 0.77 baseline, ROC-AUC 0.92).
+Most important features: oil temperature, average RPM and average engine load (cold-engine load is the main source of wear in the simulator).
+
+**What did not work first:** the label originally described wear over the *next* 10 seconds. In the simulator,
+wear depends almost entirely on the current load, oil temperature and RPM, while the next 10 seconds depend on
+what the driver does with the pedal, so the forecast barely beat the baseline (ROC-AUC 0.65–0.75 depending on
+the split). Estimating the wear of the current window is both answerable from the data and what the coach needs.
 
 ## Run it locally
 
@@ -159,19 +167,18 @@ tests/          pytest suite
 
 ## Known limitations
 
-- **The label describes engine wear, not driving style directly.** In the wear model, load on a cold engine
-  (oil below 95 °C) is the largest source of wear, and oil temperature is not a feature, so part of the
-  `AGGRESSIVE` label is "the engine was still cold". Adding thermal features, or labelling from the driver
-  profile, would make the model closer to a driving-style classifier.
+- **Simulated ground truth:** the label comes from the simulator's wear formula (cold-engine load, overheating,
+  high RPM), so the model learns that formula rather than real engine physics.
 - **Relative threshold:** the label is the top 25 % of wear rates in the whole dataset, so the share of
-  `AGGRESSIVE` ticks is fixed by construction rather than by an absolute wear limit.
+  `AGGRESSIVE` windows is fixed by construction rather than by an absolute wear limit.
+- **Small evaluation set:** with 12 sessions the test set holds 3 of them; generate more sessions for steadier metrics.
 - The cockpit's AI coach and the Spark ingestion run in the same process as the UI; in production they would be separate services.
 
 ## Roadmap
 
 - Analytics dashboard (Streamlit) over Silver/Gold: session replay, model quality, data quality metrics.
 - Data quality rules with Great Expectations as the gate between Bronze and Silver.
-- Thermal features and a per-driver evaluation of the classifier.
+- Per-driver evaluation, and a regression model for the wear rate instead of two classes.
 - CI: run the pytest suite (including the Spark tests) on every push.
 
 ## Tech stack

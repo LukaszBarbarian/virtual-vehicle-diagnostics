@@ -17,7 +17,7 @@ class FixedModel:
 
 def fill(engine, n):
     for i in range(n):
-        engine.add_sample(rpm=1000 + i, throttle=0.5, load=0.3, speed=50.0, gear=3, engine_wear=i * 1e-4)
+        engine.add_sample(rpm=1000 + i, throttle=0.5, load=0.3, speed=50.0, gear=3, oil_temp=80.0, engine_wear=i * 1e-4)
 
 
 def test_features_match_the_training_schema():
@@ -27,6 +27,7 @@ def test_features_match_the_training_schema():
         "load": [0.1, 0.5, 0.3],
         "speed_kmh": [10.0, 20.0, 30.0],
         "current_gear": [1, 2, 2],
+        "oil_temp_c": [40.0, 45.0, 50.0],
     })
     features = compute_window_features(window)
 
@@ -36,6 +37,8 @@ def test_features_match_the_training_schema():
     assert features["power_factor"] == pytest.approx(3000.0 * 0.3)  # current tick only
     assert features["rpm_range_10s"] == pytest.approx(2000.0)
     assert features["load_max_10s"] == pytest.approx(0.5)
+    assert features["rpm_max_10s"] == pytest.approx(3000.0)
+    assert features["oil_temp_c"] == pytest.approx(50.0)  # current tick only
 
 
 def test_no_prediction_until_the_window_is_full():

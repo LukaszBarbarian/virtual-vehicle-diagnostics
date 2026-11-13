@@ -24,6 +24,8 @@ def compute_window_features(window: pd.DataFrame) -> dict:
         "rpm_range_10s": float(window["engine_rpm"].max() - window["engine_rpm"].min()),
         "current_gear": int(last["current_gear"]),
         "load_max_10s": float(window["load"].max()),
+        "rpm_max_10s": float(window["engine_rpm"].max()),
+        "oil_temp_c": float(last["oil_temp_c"]),
     }
 
 
@@ -54,7 +56,8 @@ class AIInferenceEngine:
         self.buffer.clear()
         self.last_features = None
 
-    def add_sample(self, rpm: float, throttle: float, load: float, speed: float, gear: int, engine_wear: float = 0.0):
+    def add_sample(self, rpm: float, throttle: float, load: float, speed: float, gear: int,
+                   oil_temp: float, engine_wear: float = 0.0):
         """
         Adds one telemetry tick to the sliding window.
         """
@@ -64,6 +67,7 @@ class AIInferenceEngine:
             "load": load,
             "speed_kmh": speed,
             "current_gear": gear,
+            "oil_temp_c": oil_temp,
             "engine_wear": engine_wear,
         })
 
