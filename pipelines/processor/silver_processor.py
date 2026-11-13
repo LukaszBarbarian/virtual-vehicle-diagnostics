@@ -8,8 +8,8 @@ from pipelines.base.processor import BaseProcessor
 
 class SilverProcessor(BaseProcessor):
     """
-    SilverProcessor: Transforms raw JSON events from Bronze into a validated, 
-    structured, and flattened Delta table. Implements Data Quality checks and 
+    SilverProcessor: Transforms raw JSON events from Bronze into a validated,
+    structured, and flattened Delta table. Implements Data Quality checks and
     quarantine for invalid records.
     """
 
@@ -25,7 +25,7 @@ class SilverProcessor(BaseProcessor):
 
     def process(self, bronze_df: DataFrame) -> DataFrame:
         """
-        Executes the main transformation pipeline: schema parsing, projection, 
+        Executes the main transformation pipeline: schema parsing, projection,
         quality gate application, and dataset splitting.
         """
         parsed = self._parse_raw_event(bronze_df)
@@ -86,7 +86,8 @@ class SilverProcessor(BaseProcessor):
                     StructField("driver", StructType([
                         StructField("throttle", DoubleType()),
                         StructField("brake", DoubleType()),
-                        StructField("throttle_rate", DoubleType())
+                        StructField("throttle_rate", DoubleType()),
+                        StructField("driver_style", StringType())
                     ])),
                     StructField("wear", StructType([
                         StructField("engine_wear", DoubleType()),
@@ -103,7 +104,7 @@ class SilverProcessor(BaseProcessor):
 
     def _project_silver(self, parsed_df: DataFrame) -> DataFrame:
         """
-        Flattens the nested JSON structure into a tabular format, 
+        Flattens the nested JSON structure into a tabular format,
         normalizing column names for downstream ML features.
         """
         return (
@@ -118,6 +119,7 @@ class SilverProcessor(BaseProcessor):
                 F.col("parsed.payload.modules.driver.throttle").alias("throttle"),
                 F.col("parsed.payload.modules.driver.brake").alias("brake"),
                 F.col("parsed.payload.modules.driver.throttle_rate").alias("throttle_rate"),
+                F.col("parsed.payload.modules.driver.driver_style").alias("driver_profile"),
                 F.col("parsed.payload.modules.gearbox.current_gear").alias("current_gear"),
                 F.col("parsed.payload.modules.thermals.coolant_temp_c").alias("coolant_temp_c"),
                 F.col("parsed.payload.modules.thermals.oil_temp_c").alias("oil_temp_c"),
@@ -139,11 +141,13 @@ class SilverProcessor(BaseProcessor):
             )
             .withColumn(
                 "is_range_violation",
+                # COALESCE: a missing optional value is not a range violation; without it the
+                # check is NULL and the row would match neither the valid nor the quarantine filter
                 F.expr("""
-                    engine_rpm < 0 OR engine_rpm > 10000 OR
-                    speed_kmh < 0 OR speed_kmh > 500 OR
-                    throttle < 0 OR throttle > 1.1 OR
-                    coolant_temp_c < -50 OR coolant_temp_c > 250
+                    COALESCE(engine_rpm < 0 OR engine_rpm > 10000, FALSE) OR
+                    COALESCE(speed_kmh < 0 OR speed_kmh > 500, FALSE) OR
+                    COALESCE(throttle < 0 OR throttle > 1.1, FALSE) OR
+                    COALESCE(coolant_temp_c < -50 OR coolant_temp_c > 250, FALSE)
                 """)
             )
             .withColumn("is_logical_violation", F.lit(False))

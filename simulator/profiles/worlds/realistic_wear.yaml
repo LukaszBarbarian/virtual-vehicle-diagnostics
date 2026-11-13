@@ -4,10 +4,10 @@ torque_degradation_scale: 0.35
 temp_threshold: 95.0
 rpm_threshold: 5000.0   # High enough that normal Focus driving at 4500 rpm is not penalised
 
-# Stress factors tuned so the engine survives long sessions
+# Stress factors and time scale tuned so an engine survives many minutes of hard driving
 thermal_stress_factor: 0.001
 load_stress_factor: 0.0005
 rpm_stress_factor: 0.0005
 
-# Time scale: 1 simulated second = 60 seconds of engine life
-wear_time_scale: 60.0
+# Time scale: 1 simulated second = 1 second of engine life
+wear_time_scale: 1.0

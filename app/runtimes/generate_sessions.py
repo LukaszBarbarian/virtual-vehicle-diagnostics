@@ -27,6 +27,27 @@ from simulator.core.simulation.simulation import Simulation  # noqa: E402
 from streaming.events.event_builder import EventBuilder  # noqa: E402
 from streaming.kafka.producers.publisher import KafkaEventPublisher  # noqa: E402
 
+
+class GlitchingPublisher(KafkaEventPublisher):
+    """
+    Corrupts a small share of ticks like a faulty sensor would (an RPM spike or a lost speed reading),
+    so the Silver quality checks and the quarantine have real work to do.
+    """
+
+    def __init__(self, kafka, topic: str, rate: float, rng: random.Random):
+        super().__init__(kafka, topic)
+        self.rate = rate
+        self.rng = rng
+
+    def publish(self, event: dict) -> None:
+        if self.rate and self.rng.random() < self.rate:
+            modules = event["payload"]["modules"]
+            if self.rng.random() < 0.5:
+                modules["engine"]["engine_rpm"] = 25000.0  # out of the 0-10 000 range
+            else:
+                modules["vehicle"]["speed_kmh"] = None  # missing reading
+        super().publish(event)
+
 # Pedal ranges and how long the driver holds a pedal position, per driving style
 STYLES = {
     "eco": {"pedal": (0.10, 0.45), "hold_sec": (6, 15), "brake_prob": 0.10},
@@ -49,7 +70,8 @@ def pedal_plan(style: str, ticks: int, rng: random.Random):
             tick += 1
 
 
-def run_session(kafka: KafkaService, car_profile: Path, style: str, minutes: float, rng: random.Random) -> str:
+def run_session(kafka: KafkaService, car_profile: Path, style: str, minutes: float, rng: random.Random,
+                glitch_rate: float = 0.0, glitch_rng: random.Random | None = None) -> str:
     sim = Simulation(
         CarProfileLoader.load(car_profile),
         DriverProfileLoader.load(AppConfig.MAIN_PROFILES_PATH / "drivers" / f"{style}.yaml"),
@@ -58,7 +80,8 @@ def run_session(kafka: KafkaService, car_profile: Path, style: str, minutes: flo
     )
     # Seeded session id: the same command always produces the same data and train/test split
     sim.simulation_id = str(uuid.UUID(int=rng.getrandbits(128), version=4))
-    EventBuilder(sim.state_bus, KafkaEventPublisher(kafka, AppConfig.TOPIC_SIMULATION_RAW))
+    EventBuilder(sim.state_bus, GlitchingPublisher(
+        kafka, AppConfig.TOPIC_SIMULATION_RAW, glitch_rate, glitch_rng or random.Random(0)))
 
     for pedal, brake in pedal_plan(style, int(minutes * 60 * TICKS_PER_SEC), rng):
         sim.driver.set_external_pedal(pedal)
@@ -74,9 +97,12 @@ def main():
     parser.add_argument("--sessions", type=int, default=12)
     parser.add_argument("--minutes", type=float, default=3.0, help="simulated minutes per session")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--glitch-rate", type=float, default=0.001,
+                        help="share of ticks corrupted like a faulty sensor (0 disables)")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
+    glitch_rng = random.Random(args.seed + 1)  # separate stream: glitches never change the driving
     cars = sorted((AppConfig.MAIN_PROFILES_PATH / "cars").glob("*.yaml"))
     styles = list(STYLES)
 
@@ -87,7 +113,7 @@ def main():
     try:
         for i in range(args.sessions):
             car, style = cars[i % len(cars)], styles[i % len(styles)]
-            sim_id = run_session(kafka, car, style, args.minutes, rng)
+            sim_id = run_session(kafka, car, style, args.minutes, rng, args.glitch_rate, glitch_rng)
             print(f"[{i + 1}/{args.sessions}] {car.stem:<12} {style:<7} -> {sim_id}")
 
         print("Waiting for Bronze ingestion to catch up...")

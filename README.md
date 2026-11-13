@@ -3,7 +3,7 @@
 An end-to-end streaming data platform built around a physics-based car simulator:
 telemetry is streamed through **Kafka** into a **Spark / Delta Lake medallion architecture**
 (Bronze → Silver → Gold), turned into ML features, used to train a **scikit-learn** model tracked
-in **MLflow**, and scored live back in the driver's cockpit.
+in **MLflow**, scored live back in the driver's cockpit, and explored in a **Streamlit** dashboard.
 
 <img width="1154" height="824" alt="Cockpit with live AI coach" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
 
@@ -24,6 +24,7 @@ flowchart LR
         M[ML datasets<br/>train / test]
     end
     ML[MLflow<br/>runs + model registry]
+    D[Streamlit dashboard<br/>sessions, replay, model, data quality]
 
     UI -- driver.commands --> K -- driver.commands --> SIM
     SIM -- simulation.raw --> K
@@ -31,6 +32,8 @@ flowchart LR
     K -- Spark Structured Streaming --> B
     B -- batch --> S --> G --> M --> ML
     ML -- registered model --> AI
+    S & G --> D
+    ML --> D
 ```
 
 | Step | Code | What happens |
@@ -42,6 +45,23 @@ flowchart LR
 | Gold | `pipelines/processor/gold_processor.py` | 10-second rolling features per session and the wear-rate label (see below). |
 | ML | `ml/` | Group split by `simulation_id` (no leakage between sessions), Random Forest training, metrics, feature importance and model registration in MLflow. |
 | Live inference | `ml/inference/inference_processor.py` | The cockpit keeps the last 10 seconds of ticks and scores them with the registered model every second. |
+| Dashboard | `dashboard/` | Streamlit app reading the Delta tables with `deltalake` (no Spark needed) and the model from MLflow. |
+
+## Dashboard
+
+```bash
+streamlit run dashboard/streamlit_app.py   # http://localhost:8501
+```
+
+- **Overview** – sessions, ticks, rows in quarantine, model quality, share of high-wear windows per driver profile, and a table of every session.
+- **Session replay** – speed, RPM, oil temperature and engine wear of one session, with the ground-truth high-wear windows shaded and the model's live probability underneath. Test sessions (never seen in training) are listed first.
+- **Model** – model vs always-`NORMAL` baseline, confusion matrix on the test sessions, feature importance and the history of training runs.
+- **Data quality** – null and range violations of every Silver run and the quarantined rows with the reason they were rejected.
+
+![Overview](docs/img/dashboard_overview.png)
+![Session replay](docs/img/dashboard_replay.png)
+![Model quality](docs/img/dashboard_model.png)
+![Data quality](docs/img/dashboard_quality.png)
 
 ## The ML problem: a virtual wear sensor
 
@@ -64,21 +84,28 @@ current driving is wearing the engine abnormally fast, and the cockpit's AI coac
 ### Results
 
 `generate_sessions.py --sessions 12 --minutes 3` (eco / normal / sport, Ford Focus and Lamborghini; seeded, so the
-same command reproduces the same data and split), split by session into 14 400 training and 4 800 test rows:
+same command reproduces the same data and split), split by session into 15 285 training and 5 097 test rows:
 
 | Metric | Model | Baseline (always `NORMAL`) |
 | :--- | ---: | ---: |
-| Accuracy | 0.90 | 0.81 |
-| F1 `AGGRESSIVE` | 0.67 | 0.00 |
-| ROC-AUC | 0.97 | 0.50 |
+| Accuracy | 0.97 | 0.76 |
+| F1 `AGGRESSIVE` | 0.94 | 0.00 |
+| ROC-AUC | 0.998 | 0.50 |
 
-With 30 sessions the model keeps a similar margin (accuracy 0.88 vs 0.77 baseline, ROC-AUC 0.92).
-Most important features: oil temperature, average RPM and average engine load (cold-engine load is the main source of wear in the simulator).
+With 30 sessions: accuracy 0.96–0.98 vs a 0.77 baseline and ROC-AUC 0.99 for two different seeds.
+By far the most important feature is oil temperature: in the simulator, an overheated engine (oil above 120 °C)
+wears fastest, and nearly all high-wear windows come from the sport profile. The scores are high because the
+label is a deterministic function of signals the model can see; see *Known limitations*.
 
-**What did not work first:** the label originally described wear over the *next* 10 seconds. In the simulator,
-wear depends almost entirely on the current load, oil temperature and RPM, while the next 10 seconds depend on
-what the driver does with the pedal, so the forecast barely beat the baseline (ROC-AUC 0.65–0.75 depending on
-the split). Estimating the wear of the current window is both answerable from the data and what the coach needs.
+**What did not work first:**
+
+- The label originally described wear over the *next* 10 seconds. In the simulator, wear depends almost
+  entirely on the current load, oil temperature and RPM, while the next 10 seconds depend on what the driver
+  does with the pedal, so the forecast barely beat the baseline (ROC-AUC 0.65–0.75 depending on the split).
+  Estimating the wear of the current window is both answerable from the data and what the coach needs.
+- The dashboard's session table showed that most engines reached 100 % wear within one to three minutes
+  (`wear_time_scale` 60). From then on wear stopped changing, so hard driving was labelled `NORMAL`. With a
+  time scale of 1 no engine fails during a session and the labels describe the driving again.
 
 ## Run it locally
 
@@ -111,6 +138,9 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db   # browse runs at http://loca
 
 # 6. Start the cockpit again: the AI coach now loads the latest registered model
 python app/runtimes/main.py
+
+# 7. Explore sessions, the model and data quality
+streamlit run dashboard/streamlit_app.py
 ```
 
 **Cockpit controls:** mouse wheel = throttle, Shift + mouse wheel = brake. The car and driver profile are chosen
@@ -118,6 +148,9 @@ before pressing START. Without a trained model the cockpit still runs; only the 
 
 The first Spark start downloads the Delta and Kafka connectors from Maven
 (set `SPARK_JARS_DIR` to use pre-downloaded jars instead). Data lands in `./data/lake/<layer>`.
+
+The generator corrupts about 0.1 % of ticks like a faulty sensor (an RPM spike or a missing speed reading),
+so the Silver checks have something to quarantine; `--glitch-rate 0` turns this off.
 
 ### Configuration
 
@@ -143,6 +176,7 @@ pytest
 - `tests/test_simulation.py` – every car profile drives, ticks are consecutive immutable snapshots, wear never decreases, telemetry stays within the Silver quality ranges.
 - `tests/test_inference.py` – live feature computation and the warm-up window.
 - `tests/test_spark_pipeline.py` – Bronze JSON → Silver → Gold on a simulated session: de-duplication, quarantine, both label classes, and **feature parity between Gold and live inference** (skipped without Java).
+- `tests/test_split_and_generator.py` – the session split is deterministic and leak-free; the generator is reproducible and injects sensor glitches.
 
 ## Project structure
 
@@ -154,6 +188,7 @@ streaming/      event models, Kafka producers and consumers
 pipelines/      Bronze / Silver / Gold processors (template-method base class)
 ml/             feature config, dataset + split processors, training, MLflow setup, live inference
 ui2/            PySide6 cockpit and widgets
+dashboard/      Streamlit dashboard (lake + MLflow)
 tests/          pytest suite
 ```
 
@@ -176,7 +211,6 @@ tests/          pytest suite
 
 ## Roadmap
 
-- Analytics dashboard (Streamlit) over Silver/Gold: session replay, model quality, data quality metrics.
 - Data quality rules with Great Expectations as the gate between Bronze and Silver.
 - Per-driver evaluation, and a regression model for the wear rate instead of two classes.
 - CI: run the pytest suite (including the Spark tests) on every push.
@@ -184,4 +218,4 @@ tests/          pytest suite
 ## Tech stack
 
 Python 3.12 · PySide6 · Apache Kafka · Apache Spark 3.5 (Structured Streaming + batch) · Delta Lake ·
-Azure Data Lake Gen2 (optional) · scikit-learn · MLflow · pytest · Docker
+Azure Data Lake Gen2 (optional) · scikit-learn · MLflow · Streamlit + Plotly · pytest · Docker

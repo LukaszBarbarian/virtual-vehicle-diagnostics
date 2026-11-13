@@ -111,3 +111,25 @@ def test_silver_rejects_out_of_range_ticks(spark, session_states, tmp_path):
 
     assert valid.count() == 0
     assert quarantine.count() == 1
+
+
+def test_every_bronze_row_lands_in_silver_or_quarantine(spark, session_states, tmp_path):
+    def event(change):
+        e = json.loads(json.dumps(RawSimulationStateEvent(raw_state_dict=session_states[0]).to_dict()))
+        change(e["payload"]["modules"])
+        return e
+
+    events = [
+        event(lambda m: m["driver"].update(throttle=None)),        # optional value missing -> valid
+        event(lambda m: m["vehicle"].update(speed_kmh=None)),      # required value missing -> quarantine
+        event(lambda m: m["engine"].update(engine_rpm=25000)),     # out of range -> quarantine
+    ]
+    for i, e in enumerate(events):
+        e["payload"]["step"] = i
+    processor = SilverProcessor(spark)
+    df = read_bronze(spark, tmp_path, events)
+    checked = processor._apply_quality_checks(processor._project_silver(processor._parse_raw_event(df)))
+    valid, quarantine = processor._split_valid_quarantine(checked)
+
+    assert valid.count() == 1
+    assert quarantine.count() == 2

@@ -3,14 +3,13 @@ from pyspark.sql import DataFrame
 from typing import Tuple
 from pipelines.base.processor import BaseProcessor
 from app.app_config import LakePaths
+from ml.datasets.feature_config import split_simulation_ids
 
 class MLSplitProcessor(BaseProcessor):
     """
     Handles the splitting of the full ML dataset into training and testing sets.
     Uses a group-based split strategy (by simulation_id) to prevent data leakage.
     """
-
-    TRAIN_RATIO = 0.8
 
     def read(self) -> DataFrame:
         """
@@ -30,32 +29,14 @@ class MLSplitProcessor(BaseProcessor):
 
     def process(self, df: DataFrame) -> Tuple[DataFrame, DataFrame]:
         """
-        Executes a group split logic. Identifies unique simulations and assigns 
-        them to either training or testing sets based on the TRAIN_RATIO.
+        Executes a group split logic. Identifies unique simulations and assigns
+        them to either training or testing sets based on TRAIN_RATIO.
         """
         # Collect unique simulation IDs to the driver for deterministic splitting
-        simulation_ids = [
-            r.simulation_id
-            for r in (
-                df.select("simulation_id")
-                .distinct()
-                .orderBy("simulation_id")
-                .collect()
-            )
-        ]
-        
-        num_sims = len(simulation_ids)
-        
-        # Guard against empty or insufficient datasets
-        if num_sims < 2:
+        simulation_ids = [r.simulation_id for r in df.select("simulation_id").distinct().collect()]
+        if len(simulation_ids) < 2:
             print("WARNING: Insufficient unique simulations for a proper split. Using same set for both.")
-            train_ids = set(simulation_ids)
-            test_ids = set(simulation_ids)
-        else:
-            # Calculate split index ensuring at least one simulation per set
-            split_idx = max(1, int(num_sims * self.TRAIN_RATIO))
-            train_ids = set(simulation_ids[:split_idx])
-            test_ids = set(simulation_ids[split_idx:])
+        train_ids, test_ids = split_simulation_ids(simulation_ids)
 
         # Partition the Spark DataFrame based on the selected IDs
         train_df = df.filter(F.col("simulation_id").isin(train_ids))

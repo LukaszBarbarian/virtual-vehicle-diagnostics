@@ -43,3 +43,18 @@ FEATURE_COLUMNS = [
 # The categorical classification target (NORMAL vs AGGRESSIVE)
 TARGET_COLUMN = "driving_style"
 POSITIVE_CLASS = "AGGRESSIVE"
+
+# Share of sessions used for training; the rest are test sessions
+TRAIN_RATIO = 0.8
+
+
+def split_simulation_ids(simulation_ids, train_ratio: float = TRAIN_RATIO) -> tuple[set, set]:
+    """
+    Deterministic group split: whole sessions go to train or test, never single rows,
+    so no session leaks between the two sets. Shared by MLSplitProcessor and the dashboard.
+    """
+    ids = sorted(set(simulation_ids))
+    if len(ids) < 2:
+        return set(ids), set(ids)
+    split_idx = max(1, int(len(ids) * train_ratio))
+    return set(ids[:split_idx]), set(ids[split_idx:])
