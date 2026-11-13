@@ -30,7 +30,7 @@ gearbox:
   upshift_rpm: 8200
   downshift_rpm: 2500
 
-  shift_delay: 0.4
+  shift_delay: 0.15
 
 vehicle:
   mass_kg: 1650

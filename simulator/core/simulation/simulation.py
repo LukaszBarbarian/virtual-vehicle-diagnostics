@@ -36,7 +36,7 @@ class Simulation:
         """
         Initializes the simulation by building all necessary modules and setting up the initial state.
         """
-        self.simulation_id = str(uuid.uuid4()) 
+        self.simulation_id = str(uuid.uuid4())
         self.car = CarBuilder.build(car_spec)
         self.env = env_spec
         self.driver = DriverBuilder.build(driver_spec)
@@ -73,7 +73,9 @@ class Simulation:
             engine_rpm=engine.state.engine_rpm,
             throttle=driver.output.throttle,
             vehicle_speed=vehicle.state.speed_kmh,
-            throttle_rate=driver.output.throttle_rate
+            throttle_rate=driver.output.throttle_rate,
+            pedal=driver.state.pedal,
+            shift_mode=driver.state.driver_style,
         )
         gearbox.update(dt)
 
@@ -124,8 +126,8 @@ class Simulation:
         Executes a single simulation step, captures the current state snapshot, and triggers a broadcast.
         """
         if dt <= 0.0:
-            return None  
-        
+            return None
+
         engine = self.car.engine
         gearbox = self.car.gearbox
         vehicle = self.car.vehicle

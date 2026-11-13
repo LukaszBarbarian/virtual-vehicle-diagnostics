@@ -1,6 +1,7 @@
+import math
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QPlainTextEdit
+    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 )
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 
@@ -9,10 +10,32 @@ from app.runtimes.runtime import ApplicationRuntime
 from ml.datasets.feature_config import SIM_DT, WINDOW_ROWS
 from ml.inference.inference_processor import AIInferenceEngine
 from ui2.profile_loader import load_car_profile
+from ui2.theme import COLORS, START_STYLE, STOP_STYLE, STYLESHEET
 from ui2.widgets.coaching_panel import CoachingPanel
 from ui2.widgets.control_bar import ControlBar
 from ui2.widgets.gauge import CircularGauge
 from ui2.widgets.gear_display import GearDisplay
+
+
+def card() -> QFrame:
+    frame = QFrame()
+    frame.setObjectName("card")
+    return frame
+
+
+def section(text: str) -> QLabel:
+    label = QLabel(text.upper())
+    label.setObjectName("sectionLabel")
+    return label
+
+
+def oil_color(temp_c: float) -> str:
+    """Cold engine and overheating both wear the engine: show them in the gauge."""
+    if temp_c < 60:
+        return "cold"
+    if temp_c > 120:
+        return "critical"
+    return "good"
 
 
 class MainWindow(QWidget):
@@ -30,8 +53,9 @@ class MainWindow(QWidget):
         Initializes the main window, sets up simulation engines, and triggers UI construction.
         """
         super().__init__()
-        self.setWindowTitle("Vehicle Simulator Pro")
-        self.setFixedSize(1150, 800)
+        self.setWindowTitle("Vehicle Diagnostics · Cockpit")
+        self.setFixedSize(1320, 800)
+        self.setStyleSheet(STYLESHEET)
 
         self.engine_running = False
         self.car_profile = None
@@ -69,128 +93,173 @@ class MainWindow(QWidget):
 
         if self.ai_engine is None:
             self.log(f"AI coach disabled - no model at {AppConfig.MODEL_URI}. Train one with run_ml_datasets.py.")
-            self.coaching_panel.update_coaching(0.0, "neutral", "AI model not trained yet")
+            self.coaching_panel.update_coaching(0.0, "neutral", "No trained model yet: run run_ml_datasets.py")
         if self.app_runtime.spark_error:
             self.log("Spark Bronze ingestion not running - telemetry is streamed to Kafka only.")
 
+    # ------------------------------------------------------------------ layout
+
     def _build_ui(self):
         """
-        Constructs the complex layout including control panels, dashboard gauges, and the log console.
+        Sidebar (profiles, car specs, session stats, start button) next to the instrument cluster,
+        the AI coach and the event log.
         """
-        self.root = QVBoxLayout(self)
-        self.root.setContentsMargins(20, 20, 20, 20)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(16)
 
-        self.main_content = QHBoxLayout()
+        root.addWidget(self._build_sidebar())
 
-        control_panel = QVBoxLayout()
-        control_panel.addWidget(QLabel("Driver profile"))
-        self.driver_select = QComboBox()
-        control_panel.addWidget(self.driver_select)
+        main = QVBoxLayout()
+        main.setSpacing(16)
+        main.addWidget(self._build_cluster(), 5)
 
-        control_panel.addWidget(QLabel("Car profile"))
+        bottom = QHBoxLayout()
+        bottom.setSpacing(16)
+        self.coaching_panel = CoachingPanel()
+        bottom.addWidget(self.coaching_panel, 3)
+        bottom.addWidget(self._build_log(), 2)
+        main.addLayout(bottom, 2)
+
+        root.addLayout(main, 1)
+
+    def _build_sidebar(self) -> QFrame:
+        side = card()
+        side.setFixedWidth(290)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(8)
+
+        title = QLabel("Vehicle Diagnostics")
+        title.setObjectName("appTitle")
+        lay.addWidget(title)
+        subtitle = QLabel("Live cockpit  ·  Kafka  ·  AI coach")
+        subtitle.setObjectName("appSubtitle")
+        lay.addWidget(subtitle)
+        lay.addSpacing(14)
+
+        lay.addWidget(section("Car"))
         self.car_select = QComboBox()
         self.car_select.currentIndexChanged.connect(self._load_car_profile)
-        control_panel.addWidget(self.car_select)
+        lay.addWidget(self.car_select)
 
-        self.car_info_label = QLabel("Select car")
-        self.car_info_label.setStyleSheet("color: #ecf0f1; font-size: 13px; background: #2c3e50; padding: 10px; border-radius: 5px;")
+        self.car_info_label = QLabel("")
+        self.car_info_label.setObjectName("carName")
+        self.car_info_label.setVisible(False)  # the car name is shown in the selector
         self.car_info_label.setWordWrap(True)
-        control_panel.addWidget(self.car_info_label)
+        lay.addWidget(self.car_info_label)
 
-        control_panel.addSpacing(15)
+        self.spec_chips = [QLabel() for _ in range(4)]
+        chips = QGridLayout()
+        chips.setHorizontalSpacing(6)
+        chips.setVerticalSpacing(6)
+        for i, chip in enumerate(self.spec_chips):
+            chip.setObjectName("chip")
+            chip.setAlignment(Qt.AlignCenter)
+            chips.addWidget(chip, i // 2, i % 2)
+        lay.addLayout(chips)
+        lay.addSpacing(10)
 
-        self.stats_group = QVBoxLayout()
-        self.avg_speed_lbl = QLabel("AVG SPD: 0.0 km/h")
-        self.avg_fuel_lbl = QLabel("AVG FUEL: 0.0 L/h")
-        self.total_wear_lbl = QLabel("WEAR: 0.000")
+        lay.addWidget(section("Driver profile"))
+        self.driver_select = QComboBox()
+        lay.addWidget(self.driver_select)
+        lay.addSpacing(16)
 
-        for lbl in [self.avg_speed_lbl, self.avg_fuel_lbl, self.total_wear_lbl]:
-            lbl.setStyleSheet("color: #3498db; font-family: monospace; font-size: 12px; font-weight: bold;")
-            self.stats_group.addWidget(lbl)
-        control_panel.addLayout(self.stats_group)
+        lay.addWidget(section("This session"))
+        stats = QGridLayout()
+        stats.setVerticalSpacing(10)
+        self.avg_speed_lbl, self.avg_fuel_lbl, self.total_wear_lbl = QLabel(), QLabel(), QLabel()
+        for row, (name, value) in enumerate([
+            ("Average speed", self.avg_speed_lbl),
+            ("Average fuel", self.avg_fuel_lbl),
+            ("Engine wear", self.total_wear_lbl),
+        ]):
+            label = QLabel(name)
+            label.setObjectName("statLabel")
+            value.setObjectName("statValue")
+            value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            stats.addWidget(label, row, 0)
+            stats.addWidget(value, row, 1)
+        lay.addLayout(stats)
 
-        control_panel.addSpacing(20)
+        lay.addStretch()
+        hint = QLabel("Scroll  →  throttle\nShift + scroll  →  brake")
+        hint.setObjectName("appSubtitle")
+        hint.setAlignment(Qt.AlignCenter)
+        lay.addWidget(hint)
+        lay.addSpacing(8)
 
-        self.coaching_panel = CoachingPanel()
-        control_panel.addWidget(self.coaching_panel)
-        control_panel.addStretch()
-
-        self.start_button = QPushButton("START")
-        self.start_button.setFixedSize(100, 100)
+        self.start_button = QPushButton("START ENGINE")
+        self.start_button.setObjectName("startButton")
         self.start_button.setCursor(Qt.PointingHandCursor)
         self.start_button.clicked.connect(self.toggle_engine)
-        control_panel.addWidget(self.start_button, alignment=Qt.AlignCenter)
-        control_panel.addStretch()
+        lay.addWidget(self.start_button)
+        return side
 
-        dashboard_layout = QVBoxLayout()
-        upper_row = QHBoxLayout()
+    def _build_cluster(self) -> QFrame:
+        cluster = card()
+        lay = QHBoxLayout(cluster)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(8)
 
-        self.rpm_gauge = CircularGauge("RPM", 0, 8000, redline=6500, label_formatter=lambda v: str(int(v/1000)))
+        self.rpm_gauge = CircularGauge(
+            "Engine", 0, 8000, redline=6500, unit="RPM",
+            label_formatter=lambda v: f"{v / 1000:.0f}", value_formatter=lambda v: f"{v:,.0f}".replace(",", " "),
+        )
+        lay.addWidget(self.rpm_gauge, 3)
 
-        center_col = QVBoxLayout()
-        center_col.addStretch()
-        small_widgets = QHBoxLayout()
-        self.temp_gauge = CircularGauge("°C", 40, 130, major_step=20, scale_font_size=13, arc_width=10)
-        self.temp_gauge.setFixedSize(130, 130)
-
-        fuel_layout = QVBoxLayout()
-        self.fuel_val_label = QLabel("0.0")
-        self.fuel_val_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white; font-family: monospace;")
-        fuel_layout.addWidget(self.fuel_val_label, alignment=Qt.AlignCenter)
-        fuel_layout.addWidget(QLabel("L/h"), alignment=Qt.AlignCenter)
-
-        small_widgets.addWidget(self.temp_gauge)
-        small_widgets.addLayout(fuel_layout)
-        center_col.addLayout(small_widgets)
-
+        center = QVBoxLayout()
+        center.setSpacing(10)
+        center.addStretch()
+        self.temp_gauge = CircularGauge(
+            "Oil", 0, 180, major_step=60, unit="°C", scale_font_size=7, arc_width=14,
+            color_for_value=oil_color,
+        )
+        self.temp_gauge.setFixedSize(160, 160)
+        center.addWidget(self.temp_gauge, alignment=Qt.AlignCenter)
         self.gear_display = GearDisplay()
-        center_col.addWidget(self.gear_display, alignment=Qt.AlignCenter)
-        center_col.addStretch()
+        center.addWidget(self.gear_display, alignment=Qt.AlignCenter)
 
-        self.speed_gauge = CircularGauge("km/h", 0, 240, major_step=20)
+        fuel = QVBoxLayout()
+        fuel.setSpacing(0)
+        self.fuel_val_label = QLabel("0.0")
+        self.fuel_val_label.setObjectName("statValue")
+        self.fuel_val_label.setAlignment(Qt.AlignCenter)
+        fuel_unit = QLabel("L/h fuel")
+        fuel_unit.setObjectName("statLabel")
+        fuel_unit.setAlignment(Qt.AlignCenter)
+        fuel.addWidget(self.fuel_val_label)
+        fuel.addWidget(fuel_unit)
+        center.addLayout(fuel)
+        center.addStretch()
+        lay.addLayout(center, 2)
 
-        gas_col = QVBoxLayout()
-        self.throttle_label = QLabel("GAS\n0%")
-        self.throttle_label.setStyleSheet("color: #00ff00; font-family: monospace; font-weight: bold; font-size: 14px;")
+        self.speed_gauge = CircularGauge(
+            "Speed", 0, 240, major_step=40, unit="km/h",
+        )
+        lay.addWidget(self.speed_gauge, 3)
 
-        self.throttle_bar = ControlBar(horizontal=False, color="#00ff00")
-        self.throttle_bar.setFixedWidth(40)
-        gas_col.addWidget(self.throttle_label, alignment=Qt.AlignCenter)
-        gas_col.addWidget(self.throttle_bar, 1)
+        pedals = QHBoxLayout()
+        pedals.setSpacing(4)
+        self.throttle_bar = ControlBar(color=COLORS["throttle"], caption="THROTTLE")
+        self.brake_bar = ControlBar(color=COLORS["brake"], caption="BRAKE")
+        for bar in (self.throttle_bar, self.brake_bar):
+            bar.setFixedWidth(58)
+            pedals.addWidget(bar)
+        lay.addLayout(pedals)
+        return cluster
 
-        upper_row.addWidget(self.rpm_gauge, 3)
-        upper_row.addLayout(center_col, 2)
-        upper_row.addWidget(self.speed_gauge, 3)
-        upper_row.addLayout(gas_col, 0)
-
-        lower_row = QHBoxLayout()
-        self.brake_label = QLabel("BRAKE 0%")
-        self.brake_label.setStyleSheet("color: #ff4d4d; font-family: monospace; font-weight: bold; font-size: 14px;")
-
-        self.brake_bar = ControlBar(horizontal=True, color="#ff4d4d")
-        self.brake_bar.setFixedHeight(30)
-        lower_row.addWidget(self.brake_label)
-        lower_row.addWidget(self.brake_bar, 1)
-
-        dashboard_layout.addLayout(upper_row, 5)
-        dashboard_layout.addLayout(lower_row, 1)
-
-        self.main_content.addLayout(control_panel, 1)
-        self.main_content.addLayout(dashboard_layout, 4)
-        self.root.addLayout(self.main_content, 5)
-
+    def _build_log(self) -> QFrame:
+        box = card()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(18, 14, 12, 12)
+        lay.setSpacing(6)
+        lay.addWidget(section("Event log"))
         self.log_console = QPlainTextEdit()
+        self.log_console.setObjectName("log")
         self.log_console.setReadOnly(True)
-        self.log_console.setMinimumHeight(200)
-        self.log_console.setStyleSheet("""
-            background-color: #1a1a1a;
-            color: #ffffff;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 12px;
-            border: 2px solid #333;
-            padding: 5px;
-        """)
-        self.root.addWidget(self.log_console)
+        lay.addWidget(self.log_console)
+        return box
 
     def toggle_engine(self):
         """
@@ -214,10 +283,10 @@ class MainWindow(QWidget):
             self.brake_val = 0.0
             self.throttle_bar.set_value(0)
             self.brake_bar.set_value(0)
-            self.throttle_label.setText("GAS\n0%")
 
             if self.ai_engine:
                 self.ai_engine.reset()
+                self.coaching_panel.reset()
 
             sim_id = self.app_runtime.start_session(
                 on_state_cb=self.state_signal.emit,
@@ -255,7 +324,7 @@ class MainWindow(QWidget):
 
         self.rpm_gauge.set_value(curr_rpm)
         self.speed_gauge.set_value(curr_spd)
-        self.temp_gauge.set_value(curr_temp)
+        self.temp_gauge.set_value(t.get("oil_temp_c", curr_temp))
         self.gear_display.set_gear(curr_gear)
         self.fuel_val_label.setText(f"{curr_fuel:.1f}")
 
@@ -263,9 +332,9 @@ class MainWindow(QWidget):
         self.sum_speed += curr_spd
         self.sum_fuel += curr_fuel
 
-        self.avg_speed_lbl.setText(f"AVG SPD: {self.sum_speed / self.session_ticks:.1f} km/h")
-        self.avg_fuel_lbl.setText(f"AVG FUEL: {self.sum_fuel / self.session_ticks:.2f} L/h")
-        self.total_wear_lbl.setText(f"WEAR: {curr_wear:.5f}")
+        self.avg_speed_lbl.setText(f"{self.sum_speed / self.session_ticks:.0f} km/h")
+        self.avg_fuel_lbl.setText(f"{self.sum_fuel / self.session_ticks:.1f} L/h")
+        self.total_wear_lbl.setText(f"{curr_wear * 100:.2f} %")
 
         if self.ai_engine is None:
             return
@@ -292,24 +361,24 @@ class MainWindow(QWidget):
 
                     if raw_state.step % 30 == 0:
                         self.log_signal.emit(
-                            f"[AI] {label} | P(aggressive): {agg_score:.1f}% | wear last 10 s: {wear_delta:.2e}"
+                            f"AI  {'HIGH WEAR' if label == 'AGGRESSIVE' else 'normal':<9}  "
+                            f"P {agg_score:5.1f}%  ·  wear 10 s {wear_delta * 100:.3f}%"
                         )
 
+                    oil = t.get("oil_temp_c", 0.0)
                     if agg_score > 70:
                         style_key = "aggressive"
-                        status_name = "DANGER"
+                        advice = ("Engine is overheating: lift off and let it cool" if oil > 120
+                                  else "Cold engine under heavy load: go easy until it warms up" if oil < 60
+                                  else "Heavy load and high revs: ease off the throttle")
                     elif agg_score > 30:
                         style_key = "normal"
-                        status_name = "CAUTION"
+                        advice = "Wear is rising: smoother throttle keeps the engine healthy"
                     else:
                         style_key = "calm"
-                        status_name = "OPTIMAL"
+                        advice = "Smooth driving: engine wear is normal"
 
-                    display_text = (
-                        f"STATUS: {status_name}\n"
-                        f"P(AGGRESSIVE): {int(agg_score)}%\n"
-                        f"WEAR 10s: {wear_delta:.2e}"
-                    )
+                    display_text = f"{advice}\nMeasured wear, last 10 s: {wear_delta * 100:.3f} %"
 
                     self.coaching_update_signal.emit(
                         float(self.current_display),
@@ -321,12 +390,12 @@ class MainWindow(QWidget):
                     progress_pct = self.ai_engine.warmup_progress * 100
 
                     if raw_state.step % 30 == 0:
-                        self.log_signal.emit(f"AI warming up: {progress_pct:.0f}% ({progress_val}/{WINDOW_ROWS} samples)")
+                        self.log_signal.emit(f"AI  warming up {progress_pct:.0f}%  ({progress_val}/{WINDOW_ROWS} ticks)")
 
                     self.coaching_update_signal.emit(
                         0.0,
                         "neutral",
-                        f"AI is warming up...\nProgress: {progress_pct:.0f}%"
+                        f"Collecting the first 10 seconds of driving: {progress_pct:.0f}%"
                     )
             except Exception as e:
                 self.log_signal.emit(f"AI UI ERROR: {e}")
@@ -365,22 +434,20 @@ class MainWindow(QWidget):
         if event.modifiers() & Qt.ShiftModifier:
             self.brake_val = max(0.0, min(1.0, self.brake_val + step))
             self.brake_bar.set_value(self.brake_val)
-            self.brake_label.setText(f"BRAKE {int(self.brake_val * 100)}%")
         else:
             self.throttle_val = max(0.0, min(1.0, self.throttle_val + step))
             if self.throttle_val > 0:
                 self.app_runtime.play(SIM_DT)
             self.throttle_bar.set_value(self.throttle_val)
-            self.throttle_label.setText(f"GAS\n{int(self.throttle_val * 100)}%")
 
     def _load_profiles(self):
         """
         Scans the local filesystem for driver and car YAML profiles and populates selection combos.
         """
         for d in sorted((AppConfig.MAIN_PROFILES_PATH / "drivers").glob("*.yaml")):
-            self.driver_select.addItem(d.stem, str(d))
+            self.driver_select.addItem(d.stem.capitalize(), str(d))
         for c in sorted((AppConfig.MAIN_PROFILES_PATH / "cars").glob("*.yaml")):
-            self.car_select.addItem(c.stem, str(c))
+            self.car_select.addItem(load_car_profile(str(c)).get("name", c.stem), str(c))
 
     def _load_car_profile(self):
         """
@@ -395,17 +462,19 @@ class MainWindow(QWidget):
         limits = self.car_profile.get("limits", {})
         display = self.car_profile.get("display", {})
         max_rpm = e.get("max_rpm", 7000)
-        self.rpm_gauge.set_range(0, max_rpm)
-        self.rpm_gauge.set_redline(limits.get("redline_rpm", max_rpm * 0.9))
+        # Like a real tachometer: the scale runs past the cut-off, the red zone starts at the redline
+        self.rpm_gauge.set_range(0, math.ceil((max_rpm + 500) / 1000) * 1000)
+        self.rpm_gauge.set_redline(limits.get("redline_rpm", max_rpm * 0.95))
         self.speed_gauge.set_range(0, display.get("max_speed_on_gauge", 240))
-        info_text = (
-            f"<b>Model:</b> {self.car_profile.get('name')}<br>"
-            f"<b>Power:</b> {e.get('max_power_kw')} kW<br>"
-            f"<b>Torque:</b> {e.get('base_torque_nm')} Nm<br>"
-            f"<b>Weight:</b> {v.get('mass_kg')} kg<br>"
-            f"<b>Gears:</b> {len(g.get('gears', []))}"
-        )
-        self.car_info_label.setText(info_text)
+        self.car_info_label.setText("")
+        specs = [
+            f"{e.get('max_power_kw')} kW",
+            f"{e.get('base_torque_nm')} Nm",
+            f"{v.get('mass_kg')} kg",
+            f"{len(g.get('gears', []))} gears",
+        ]
+        for chip, text in zip(self.spec_chips, specs):
+            chip.setText(text)
 
     def _tick(self):
         """
@@ -430,25 +499,26 @@ class MainWindow(QWidget):
         """
         self.rpm_gauge.set_value(0)
         self.speed_gauge.set_value(0)
+        self.temp_gauge.set_value(0)
         self.fuel_val_label.setText("0.0")
         self.gear_display.set_gear(0)
         self.throttle_val = 0.0
         self.throttle_bar.set_value(0)
-        self.throttle_label.setText("GAS\n0%")
         self.brake_val = 0.0
         self.brake_bar.set_value(0)
-        self.brake_label.setText("BRAKE 0%")
+        for label in (self.avg_speed_lbl, self.avg_fuel_lbl, self.total_wear_lbl):
+            label.setText("–")
 
     def _apply_start_style(self):
         """
         Styles the engine button for the 'ready to start' state.
         """
-        self.start_button.setText("START")
-        self.start_button.setStyleSheet("background-color: #2ecc71; border-radius: 50px; color: black; font-weight: bold;")
+        self.start_button.setText("START ENGINE")
+        self.start_button.setStyleSheet(START_STYLE)
 
     def _apply_running_style(self):
         """
         Styles the engine button for the 'currently running' state.
         """
-        self.start_button.setText("STOP")
-        self.start_button.setStyleSheet("background-color: #e74c3c; border-radius: 50px; color: white; font-weight: bold;")
+        self.start_button.setText("STOP ENGINE")
+        self.start_button.setStyleSheet(STOP_STYLE)

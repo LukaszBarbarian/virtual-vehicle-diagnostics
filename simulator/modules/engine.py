@@ -48,7 +48,7 @@ class EngineState(BaseState):
 
 class EngineModule(BaseModule):
     """
-    Simulates internal combustion engine physics, including torque curves, 
+    Simulates internal combustion engine physics, including torque curves,
     engine braking, anti-stall logic, and fuel consumption.
     """
     def __init__(self, initial_state: EngineState):
@@ -64,27 +64,29 @@ class EngineModule(BaseModule):
         Configures engine limits and performance characteristics based on the provided specification.
         """
         self.spec = cfg
-        self.max_rpm = getattr(cfg, 'max_rpm', 7000.0)
-        self.max_torque = (
-            getattr(cfg, 'max_torque', None) or 
-            getattr(cfg, 'peak_torque', None) or 
-            getattr(cfg, 'torque_nm', 300.0)
-        )
-        self.max_power_rpm = (
-            getattr(cfg, 'max_power_rpm', None) or 
-            getattr(cfg, 'power_rpm', self.max_rpm * 0.85)
-        )
-        self.state.rotational_inertia = getattr(cfg, 'rotational_inertia', 0.08)
+        self.max_rpm = cfg.max_rpm
+        self.idle_rpm = cfg.idle_rpm
+        self.max_torque = cfg.base_torque_nm
+        # RPM of peak torque: the torque curve is a parabola centred here
+        self.peak_torque_rpm = cfg.peak_rpm
+        # Rev limiter: torque fades out from limiter_start_ratio * max_rpm and is cut at max_rpm
+        self.limiter_start_rpm = cfg.max_rpm * cfg.limiter_start_ratio
+        self.state.rotational_inertia = cfg.rotational_inertia
 
     def _get_max_torque_at_rpm(self, rpm: float) -> float:
         """
         Calculates the theoretical maximum torque available at a given RPM using a parabolic torque curve.
         """
-        peak_t_rpm = self.max_power_rpm * 0.75
         rpm_range = self.max_rpm - self.idle_rpm
-        x = (rpm - peak_t_rpm) / max(1.0, rpm_range)
-        torque_curve = 1.0 - (x**2 * 1.5)
-        return max(0.0, self.max_torque * torque_curve)
+        x = (rpm - self.peak_torque_rpm) / max(1.0, rpm_range)
+        torque_curve = max(self.spec.torque_curve_min, 1.0 - (x**2 * 1.5))
+        return self.max_torque * torque_curve
+
+    def _limiter_factor(self, rpm: float) -> float:
+        """1 below the limiter, fading to 0 (fuel cut) at max_rpm."""
+        if rpm <= self.limiter_start_rpm:
+            return 1.0
+        return max(0.0, (self.max_rpm - rpm) / max(1.0, self.max_rpm - self.limiter_start_rpm))
 
     def _get_losses(self, rpm: float, throttle: float) -> float:
         """
@@ -100,34 +102,37 @@ class EngineModule(BaseModule):
         """
         i = self.input
         s = self.state
-        effective_throttle = i.throttle 
-        
+        effective_throttle = i.throttle
+
         # RPM Logic: Synchronize with wheels if clutch is engaged, otherwise simulate free-revving
         if i.clutch_factor > 0.8 and i.gear_ratio_total > 0:
             v_mps = i.vehicle_speed / 3.6
             wheel_rps = v_mps / (2 * math.pi * max(0.01, i.wheel_radius_m))
-            target_rpm = wheel_rps * i.gear_ratio_total * 60
-            s.engine_rpm = max(self.idle_rpm, min(self.max_rpm, target_rpm))
+            coupled_rpm = wheel_rps * i.gear_ratio_total * 60
+            s.engine_rpm = max(self.idle_rpm, min(self.max_rpm, coupled_rpm))
         else:
             angular_accel = (s.engine_torque_filtered / max(0.01, s.rotational_inertia))
             rpm_change = (angular_accel * (60 / (2 * math.pi))) * dt
-            s.engine_rpm = max(0.0, min(self.max_rpm + 500, s.engine_rpm + rpm_change))
+            coupled_rpm = s.engine_rpm + rpm_change
+            s.engine_rpm = max(0.0, min(self.max_rpm, coupled_rpm))
 
         # Torque Calculation
         max_t = self._get_max_torque_at_rpm(s.engine_rpm) * (1.0 - i.torque_loss_factor)
         s.internal_friction_nm = self._get_losses(s.engine_rpm, effective_throttle)
-        
+
         # Anti-Stall & Creep Logic
         creep_torque = self.max_torque * 0.12
         idle_torque_request = creep_torque if i.current_gear > 0 else 0.0
 
         if s.engine_rpm < self.idle_rpm:
             idle_torque_request += (self.idle_rpm - s.engine_rpm) * 6.0
-            
-        # Combine throttle torque with responsiveness boost
+
+        # Combine throttle torque with responsiveness boost; the rev limiter cuts it near max_rpm,
+        # so wheel speed (not just the gauge) is capped by the gear ratio
         throttle_torque = max_t * effective_throttle
         if effective_throttle > 0.01:
-            throttle_torque += max_t * 0.05 
+            throttle_torque += max_t * 0.05
+        throttle_torque *= self._limiter_factor(coupled_rpm)
 
         # Net Torque filtering for smooth response
         raw_net_torque = throttle_torque + idle_torque_request - s.internal_friction_nm
@@ -137,7 +142,7 @@ class EngineModule(BaseModule):
         # Performance, Fuel and Thermal simulation
         omega = s.engine_rpm * 2 * math.pi / 60
         output_power_kw = (s.engine_torque_filtered * omega) / 1000.0
-        
+
         # Fuel Cut-Off during engine braking
         if s.engine_torque_filtered < 0 and s.engine_rpm > self.idle_rpm + 200:
             s.fuel_rate_lph = 0.0

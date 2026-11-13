@@ -22,7 +22,7 @@ gearbox:
   gears: [3.54, 1.91, 1.28, 0.95, 0.76, 0.62]
   upshift_rpm: 6000
   downshift_rpm: 1800
-  shift_delay: 0.55
+  shift_delay: 0.2
 
 
 vehicle:

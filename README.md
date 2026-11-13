@@ -5,7 +5,7 @@ telemetry is streamed through **Kafka** into a **Spark / Delta Lake medallion ar
 (Bronze → Silver → Gold), turned into ML features, used to train a **scikit-learn** model tracked
 in **MLflow**, scored live back in the driver's cockpit, and explored in a **Streamlit** dashboard.
 
-<img width="1154" height="824" alt="Cockpit with live AI coach" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
+![Cockpit with the live AI engine coach](docs/img/cockpit.png)
 
 ## Architecture
 
@@ -38,7 +38,7 @@ flowchart LR
 
 | Step | Code | What happens |
 | :--- | :--- | :--- |
-| Simulation | `simulator/` | 10 Hz physics loop: torque curve, gear shifts, drag and rolling resistance, coolant/oil temperatures, engine wear. Car, driver and world behaviour come from YAML profiles. |
+| Simulation | `simulator/` | 10 Hz physics loop: torque curve with a rev limiter, an automatic gearbox with a shift map per driver profile, drag and rolling resistance, coolant/oil temperatures, engine wear. Car, driver and world behaviour come from YAML profiles. |
 | Streaming | `streaming/`, `infra/kafka/` | Every tick is published as a versioned `simulation.raw` event; cockpit inputs travel the other way as `driver.commands`. |
 | Bronze | `pipelines/processor/bronze_processor.py` | Spark Structured Streaming from Kafka, raw events stored as JSON with checkpointing. |
 | Silver | `pipelines/processor/silver_processor.py` | Explicit schema, flattening, null and physical-range checks, de-duplication per tick. Invalid rows go to a quarantine table; data quality counts are appended to a metrics table. |
@@ -88,13 +88,13 @@ same command reproduces the same data and split), split by session into 15 285 t
 
 | Metric | Model | Baseline (always `NORMAL`) |
 | :--- | ---: | ---: |
-| Accuracy | 0.97 | 0.76 |
-| F1 `AGGRESSIVE` | 0.94 | 0.00 |
-| ROC-AUC | 0.998 | 0.50 |
+| Accuracy | 0.96 | 0.73 |
+| F1 `AGGRESSIVE` | 0.92 | 0.00 |
+| ROC-AUC | 0.994 | 0.50 |
 
-With 30 sessions: accuracy 0.96–0.98 vs a 0.77 baseline and ROC-AUC 0.99 for two different seeds.
-By far the most important feature is oil temperature: in the simulator, an overheated engine (oil above 120 °C)
-wears fastest, and nearly all high-wear windows come from the sport profile. The scores are high because the
+With 30 sessions: accuracy 0.95 vs a 0.71–0.79 baseline and ROC-AUC 0.99 for two different seeds.
+The most important features are average and peak engine load and peak RPM: in the simulator, mechanical wear
+grows with load × RPM², on top of load on a cold engine and oil above 120 °C. The scores are high because the
 label is a deterministic function of signals the model can see; see *Known limitations*.
 
 **What did not work first:**
@@ -106,6 +106,12 @@ label is a deterministic function of signals the model can see; see *Known limit
 - The dashboard's session table showed that most engines reached 100 % wear within one to three minutes
   (`wear_time_scale` 60). From then on wear stopped changing, so hard driving was labelled `NORMAL`. With a
   time scale of 1 no engine fails during a session and the labels describe the driving again.
+- The gearbox changed up at a fixed 6 000 rpm whatever the pedal or the driver profile, the rev limiter did not
+  cut torque (a car could reach 485 km/h in first gear), the engine ignored the torque in its profile (the
+  Lamborghini had the Ford's engine) and oil could heat up to 250 °C. Now an automatic shift map changes up at
+  ~2 000 rpm on a light pedal in eco and holds gears to the redline only at full pedal in sport, the limiter
+  cuts fuel, oil peaks around 130 °C, and 0–100 km/h takes ~8 s in the Focus and ~3 s in the Lamborghini.
+  Wear now also includes mechanical load (load × RPM²), so eco < normal < sport.
 
 ## Run it locally
 
@@ -144,7 +150,10 @@ streamlit run dashboard/streamlit_app.py
 ```
 
 **Cockpit controls:** mouse wheel = throttle, Shift + mouse wheel = brake. The car and driver profile are chosen
-before pressing START. Without a trained model the cockpit still runs; only the AI coach is disabled.
+before pressing START ENGINE. The oil gauge turns blue on a cold engine and red above 120 °C, the two conditions
+that wear the engine fastest. The AI engine coach shows the model's probability of high wear, the wear actually
+measured over the last 10 seconds and a one-minute trend. Without a trained model the cockpit still runs; only the
+AI coach is disabled.
 
 The first Spark start downloads the Delta and Kafka connectors from Maven
 (set `SPARK_JARS_DIR` to use pre-downloaded jars instead). Data lands in `./data/lake/<layer>`.
@@ -202,8 +211,8 @@ tests/          pytest suite
 
 ## Known limitations
 
-- **Simulated ground truth:** the label comes from the simulator's wear formula (cold-engine load, overheating,
-  high RPM), so the model learns that formula rather than real engine physics.
+- **Simulated ground truth:** the label comes from the simulator's wear formula (load × RPM², cold-engine load,
+  overheating), so the model learns that formula rather than real engine physics.
 - **Relative threshold:** the label is the top 25 % of wear rates in the whole dataset, so the share of
   `AGGRESSIVE` windows is fixed by construction rather than by an absolute wear limit.
 - **Small evaluation set:** with 12 sessions the test set holds 3 of them; generate more sessions for steadier metrics.

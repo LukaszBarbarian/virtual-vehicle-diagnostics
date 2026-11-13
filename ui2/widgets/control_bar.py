@@ -1,44 +1,61 @@
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QColor
-from PySide6.QtCore import Qt, QRectF
+
+from ui2.theme import font, qcolor
+
 
 class ControlBar(QWidget):
     """
-    A custom widget that renders a vertical or horizontal progress bar using QPainter.
+    Slim pedal bar with a gradient fill, its value in percent and a caption (e.g. THROTTLE).
     """
-    def __init__(self, horizontal=False, color="#2ecc71"):
-        """
-        Initializes the control bar orientation, primary color, and default value.
-        """
+
+    def __init__(self, horizontal=False, color="#22d3ee", caption: str = ""):
         super().__init__()
         self.horizontal = horizontal
-        self.bar_color = color
+        self.bar_color = QColor(color)
+        self.caption = caption
         self.value = 0.0
+        if not horizontal:
+            self.setMinimumWidth(44)
 
     def set_value(self, v: float):
-        """
-        Sets the bar level (0.0 to 1.0) and triggers a repaint of the widget.
-        """
         self.value = max(0.0, min(1.0, v))
         self.update()
 
     def paintEvent(self, _):
-        """
-        Handles the custom drawing logic for the background and the dynamic value indicator.
-        """
-        with QPainter(self) as painter:
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setBrush(QColor("#1a1a1a"))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(self.rect(), 5, 5)
+        with QPainter(self) as p:
+            p.setRenderHint(QPainter.Antialiasing)
+            r = QRectF(self.rect())
+            caption_h = 34 if self.caption and not self.horizontal else 0
+            track = r.adjusted(8, 22, -8, -caption_h) if not self.horizontal else r.adjusted(0, 0, 0, 0)
 
-            margin = 3
-            if self.horizontal:
-                w = (self.width() - (margin * 2)) * self.value
-                rect = QRectF(margin, margin, w, self.height() - (margin * 2))
-            else:
-                h = (self.height() - (margin * 2)) * self.value
-                rect = QRectF(margin, self.height() - h - margin, self.width() - (margin * 2), h)
-            
-            painter.setBrush(QColor(self.bar_color))
-            painter.drawRoundedRect(rect, 3, 3)
+            p.setPen(Qt.NoPen)
+            p.setBrush(qcolor("track"))
+            radius = min(track.width(), track.height()) / 2
+            p.drawRoundedRect(track, radius, radius)
+
+            if self.value > 0:
+                if self.horizontal:
+                    fill = QRectF(track.left(), track.top(), track.width() * self.value, track.height())
+                    grad = QLinearGradient(fill.topLeft(), fill.topRight())
+                else:
+                    h = track.height() * self.value
+                    fill = QRectF(track.left(), track.bottom() - h, track.width(), h)
+                    grad = QLinearGradient(fill.bottomLeft(), fill.topLeft())
+                dim = QColor(self.bar_color)
+                dim.setAlpha(110)
+                grad.setColorAt(0, dim)
+                grad.setColorAt(1, self.bar_color)
+                p.setBrush(grad)
+                p.drawRoundedRect(fill, radius, radius)
+
+            if not self.horizontal:
+                p.setPen(qcolor("text"))
+                p.setFont(font(9, QFont.DemiBold))
+                p.drawText(QRectF(r.left(), r.top(), r.width(), 20), Qt.AlignCenter, f"{self.value * 100:.0f}%")
+                if self.caption:
+                    p.setPen(qcolor("muted"))
+                    p.setFont(font(7, QFont.DemiBold))
+                    p.drawText(QRectF(r.left() - 10, r.bottom() - caption_h + 6, r.width() + 20, 24),
+                               Qt.AlignHCenter | Qt.AlignTop, self.caption)

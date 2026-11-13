@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from simulator.core.base import BaseModule, BaseState, BaseInput, BaseOutput
 from simulator.core.models.model_specification import ThermalSpecification
@@ -93,8 +94,9 @@ class ThermalModule(BaseModule):
         # Integrate coolant temperature change
         s.coolant_temp_c += (net_coolant_heat * dt) / s.thermal_mass
         
-        # Oil temperature logic - follows coolant with lag and heat based on engine load
-        target_oil_temp = s.coolant_temp_c + (i.heat_kw * 0.5)
+        # Oil follows the coolant with a lag and runs hotter under load; the gap saturates at about
+        # 40 degC, so a hard-driven engine reaches 130-140 degC oil rather than running away
+        target_oil_temp = s.coolant_temp_c + 40.0 * (1.0 - math.exp(-max(0.0, i.heat_kw) / 120.0))
         s.oil_temp_c += (target_oil_temp - s.oil_temp_c) * self.oil_response_rate * dt
 
         self.output = ThermalOutput(

@@ -101,7 +101,10 @@ class WearModule(BaseModule):
             excess = rpm_ratio - 1.0
             engine_impulse += (excess ** 2) * self.rpm_stress_factor
 
-        # 4. Natural Baseline Aging
+        # 4. Mechanical load: bearing and piston stress grows with load and the square of RPM
+        engine_impulse += i.load * (rpm_ratio ** 2) * self.load_stress_factor
+
+        # 5. Natural Baseline Aging
         engine_impulse += (i.load * 1e-6) + 1e-8
 
         # Update state with integrated damage
