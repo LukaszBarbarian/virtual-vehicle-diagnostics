@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 # Dynamic path configuration to ensure the application can resolve local modules
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from ui2.main_window import MainWindow

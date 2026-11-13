@@ -1,6 +1,6 @@
 from pyspark.sql.functions import col
 from pyspark.sql import DataFrame
-from app.app_config import AppConfig
+from app.app_config import AppConfig, LakePaths
 from pipelines.base.processor import BaseProcessor
 
 class BronzeProcessor(BaseProcessor):
@@ -46,8 +46,8 @@ class BronzeProcessor(BaseProcessor):
             df.writeStream
             .format("json")
             .outputMode("append")
-            .option("path", AppConfig.BRONZE_RAW_PATH)
-            .option("checkpointLocation", AppConfig.BRONZE_CHECKPOINT)
+            .option("path", LakePaths.BRONZE_RAW_PATH)
+            .option("checkpointLocation", LakePaths.BRONZE_CHECKPOINT)
             .start()
         )
         return query

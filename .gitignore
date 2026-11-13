@@ -1,4 +1,12 @@
 .venv
 **/__pycache__
-**mlruns
+.pytest_cache
 .env
+
+# Local data lake, MLflow tracking store and Spark leftovers
+data/
+mlflow.db
+mlruns/
+spark-warehouse/
+metastore_db/
+derby.log

@@ -19,17 +19,15 @@ class BaseProcessor(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
     def transform(self, df: DataFrame) -> DataFrame:
         """
-        Applies initial data cleaning or schema adjustments.
+        Applies initial data cleaning or schema adjustments. Pass-through by default.
         """
         return df
     
-    @abstractmethod
     def process(self, df: DataFrame) -> DataFrame:
         """
-        Executes core business logic and complex transformations.
+        Executes core business logic and complex transformations. Pass-through by default.
         """
         return df
 

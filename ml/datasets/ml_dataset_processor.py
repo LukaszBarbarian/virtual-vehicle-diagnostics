@@ -2,7 +2,7 @@
 from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 from pipelines.base.processor import BaseProcessor
-from app.app_config import AppConfig
+from app.app_config import LakePaths
 from ml.datasets.feature_config import FEATURE_COLUMNS, TARGET_COLUMN, META_COLUMNS
 
 class MLDatasetProcessor(BaseProcessor):
@@ -18,7 +18,7 @@ class MLDatasetProcessor(BaseProcessor):
         return (
             self.spark.read
             .format("delta")
-            .load(AppConfig.GOLD_FEATURES_PATH)
+            .load(LakePaths.GOLD_FEATURES_PATH)
         )
 
     def transform(self, df: DataFrame) -> DataFrame:
@@ -43,5 +43,5 @@ class MLDatasetProcessor(BaseProcessor):
             df.write
             .format("parquet")
             .mode("overwrite")
-            .save(AppConfig.ML_DATASET_FULL_PATH)
+            .save(LakePaths.ML_DATASET_FULL_PATH)
         )

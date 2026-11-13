@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 
 class SimulationEngine:
     """
@@ -12,6 +13,7 @@ class SimulationEngine:
         self.sim = sim
         self.running = False
         self._thread = None
+        self.on_error = None
 
     def start_loop(self, dt: float):
         """
@@ -32,9 +34,20 @@ class SimulationEngine:
         """
         The internal loop that triggers physics steps at defined intervals until stopped.
         """
+        next_tick = time.perf_counter()
         while self.running:
-            self.sim.step(dt)
-            time.sleep(dt)
+            try:
+                self.sim.step(dt)
+            except Exception:
+                # Surface the failure (e.g. Kafka unreachable) instead of silently killing the thread
+                traceback.print_exc()
+                self.running = False
+                if self.on_error:
+                    self.on_error()
+                break
+            # Keep a fixed tick rate regardless of how long the step took
+            next_tick += dt
+            time.sleep(max(0.0, next_tick - time.perf_counter()))
 
     def stop_loop(self):
         """

@@ -10,6 +10,6 @@ class EnvironmentLoader:
         """
         Reads an environment configuration file and initializes a structured EnvironmentSpecification object.
         """
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = yaml.safe_load(f)
         return EnvironmentSpecification(**d)

@@ -10,6 +10,6 @@ class WearProfileLoader:
         """
         Parses a wear configuration file and maps it to a structured WearSpecification object.
         """
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = yaml.safe_load(f)
         return WearSpecification(**d)

@@ -1,0 +1,6 @@
+ramp_time: 8.0
+cruise_throttle: 0.25
+cruise_time: 15.0
+decel_time: 6.0
+final_throttle: 0.2
+driver_style: "eco"

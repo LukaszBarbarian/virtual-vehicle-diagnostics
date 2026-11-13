@@ -30,8 +30,9 @@ class SimulationRuntime:
         self._kafka = kafka
         self._bootstrapped = False
         self.current_wear_accumulator = 0.0
+        self._wear_car_profile = None
 
-    def bootstrap(self):
+    def bootstrap(self, car_profile_path=None, driver_profile_path=None):
         """
         Loads configuration profiles and initializes the simulation engine and event publishers.
         Ensures the environment is ready for execution without starting the time flow.
@@ -39,11 +40,12 @@ class SimulationRuntime:
         if self._bootstrapped:
             return self
 
-        # Load specifications from YAML profiles
-        car_spec = CarProfileLoader.load(f"{AppConfig.MAIN_PROFILES_PATH}/cars/ford_focus.yaml")
-        driver_spec = DriverProfileLoader.load(f"{AppConfig.MAIN_PROFILES_PATH}/drivers/normal.yaml")
-        wear_spec = WearProfileLoader.load(f"{AppConfig.MAIN_PROFILES_PATH}/worlds/realistic_wear.yaml")
-        env_spec = EnvironmentLoader.load(f"{AppConfig.MAIN_PROFILES_PATH}/worlds/summer.yaml")
+        # Load specifications from YAML profiles (the car and driver are chosen in the cockpit)
+        car_profile_path = str(car_profile_path or AppConfig.DEFAULT_CAR_PROFILE)
+        car_spec = CarProfileLoader.load(car_profile_path)
+        driver_spec = DriverProfileLoader.load(driver_profile_path or AppConfig.DEFAULT_DRIVER_PROFILE)
+        wear_spec = WearProfileLoader.load(AppConfig.WEAR_PROFILE)
+        env_spec = EnvironmentLoader.load(AppConfig.ENVIRONMENT_PROFILE)
 
         self.car_spec = car_spec
         self.driver_spec = driver_spec
@@ -53,7 +55,10 @@ class SimulationRuntime:
         # Initialize core simulation with loaded specs
         self.sim = Simulation(car_spec, driver_spec, wear_spec, env_spec)
 
-        # Restore accumulated wear state if persisting between sessions
+        # Carry engine wear over between sessions of the same car
+        if self._wear_car_profile != car_profile_path:
+            self.current_wear_accumulator = 0.0
+            self._wear_car_profile = car_profile_path
         if self.current_wear_accumulator > 0:
             self.sim.wear.state.engine_wear = self.current_wear_accumulator
 

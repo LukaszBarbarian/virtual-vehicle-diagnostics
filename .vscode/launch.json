@@ -10,7 +10,7 @@
       "justMyCode": false,
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local"
+        "STORAGE_MODE": "local"
       }
     },
     {
@@ -22,7 +22,7 @@
       "justMyCode": false,
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local"
+        "STORAGE_MODE": "local"
       }
     },
     {
@@ -34,7 +34,7 @@
       "justMyCode": false,
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
-        "SPARK_MODE": "local"
+        "STORAGE_MODE": "local"
       }
     }
   ]

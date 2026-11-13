@@ -16,7 +16,11 @@ from simulator.modules.gearbox import GearboxInput, GearboxModule
 from simulator.modules.thermals import ThermalInput, ThermalModule
 from simulator.modules.vehicle import VehicleInput, VehicleModule
 from simulator.modules.wear import WearInput, WearModule
+import os
 import uuid
+
+# Set VVD_DEBUG=1 to print every tick to the console
+DEBUG_TICKS = os.getenv("VVD_DEBUG") == "1"
 
 class Simulation:
     """
@@ -129,22 +133,24 @@ class Simulation:
         wear = self.wear
         driver = self.driver
 
+        self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
+        if DEBUG_TICKS:
+            self.print_state()
+
+        # Copy every module state so the snapshot is not mutated by later ticks
         raw = RawSimulationState(
             simulation_id=self.simulation_id,
             time=self.time,
             step=self.step_count,
             modules={
-                "engine": vars(self.car.engine.state),
-                "gearbox": vars(self.car.gearbox.state),
-                "vehicle": vars(self.car.vehicle.state),
-                "thermals": vars(self.car.thermals.state),
-                "wear": vars(self.wear.state),
-                "driver": vars(self.driver.state),
+                "engine": dict(vars(engine.state)),
+                "gearbox": dict(vars(gearbox.state)),
+                "vehicle": dict(vars(vehicle.state)),
+                "thermals": dict(vars(thermals.state)),
+                "wear": dict(vars(wear.state)),
+                "driver": dict(vars(driver.state)),
             }
         )
-
-        self.update_modules(dt, engine, gearbox, vehicle, thermals, wear, driver)
-        self.print_state()
 
         if engine.state.engine_rpm > 1.0 or vehicle.state.speed_kmh > 0.1:
             self.publish(dt, raw)

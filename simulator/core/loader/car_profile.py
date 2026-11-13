@@ -10,7 +10,7 @@ class CarProfileLoader:
         """
         Parses a YAML file and maps its contents to a structured CarSpecification object.
         """
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         return CarSpecification(

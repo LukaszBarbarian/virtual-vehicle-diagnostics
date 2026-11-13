@@ -1,26 +1,45 @@
 import os
+import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-# Load variables from .env file
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Load variables from the project's .env file (if present), regardless of the working directory
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+def _list_jars(path: str) -> str:
+    """Returns a comma-separated list of .jar files in the directory (used for offline Spark setups)."""
+    if not path or not os.path.isdir(path):
+        return ""
+    return ",".join(os.path.join(path, jar) for jar in os.listdir(path) if jar.endswith(".jar"))
+
 
 class AppConfig:
     """
-    Configuration class for Kafka, Azure Data Lake, and Spark settings.
-    Uses environment variables for sensitive data.
+    Central configuration for Kafka, the data lake (local disk or Azure Data Lake Gen2), Spark and MLflow.
+    Every value can be overridden with an environment variable (see .env.example).
     """
 
-    PYTHON_EXEC = os.getenv("PYTHON_INTERPRETER", "python")
+    PROJECT_ROOT = PROJECT_ROOT
+    PYTHON_EXEC = os.getenv("PYTHON_INTERPRETER", sys.executable)
 
     # ========================
     # KAFKA
     # ========================
     KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
     TOPIC_SIMULATION_RAW = "simulation.raw"
+    TOPIC_DRIVER_COMMANDS = "driver.commands"
 
     # ========================
-    # AZURE DATA LAKE
+    # DATA LAKE
     # ========================
+    # "local" writes the medallion layers to LOCAL_LAKE_DIR; "azure" writes to ADLS Gen2 over abfss://
+    STORAGE_MODE = os.getenv("STORAGE_MODE", "local").lower()
+    LOCAL_LAKE_DIR = Path(os.getenv("LOCAL_LAKE_DIR", PROJECT_ROOT / "data" / "lake")).resolve()
+
     STORAGE_ACCOUNT = os.getenv("AZURE_STORAGE_ACCOUNT")
     STORAGE_ACCOUNT_KEY = os.getenv("AZURE_STORAGE_KEY")
 
@@ -28,40 +47,63 @@ class AppConfig:
     SILVER_CONTAINER = "silver"
     GOLD_CONTAINER = "gold"
     ML_CONTAINER = "mldatasets"
+    SYSTEM_CONTAINER = "system"
 
     # ========================
-    # SPARK JARS CONFIGURATION
+    # SPARK
     # ========================
-    JAR_PATH = os.getenv("SPARK_JARS_DIR", "C:/spark/jars")
-    
-    @staticmethod
-    def get_all_jars(path):
-        """Scans the directory for .jar files for Spark session."""
-        if not os.path.exists(path):
-            return ""
-        return ",".join([os.path.join(path, jar) for jar in os.listdir(path) if jar.endswith(".jar")])
-
-    ALL_JARS = get_all_jars(JAR_PATH)
+    SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
+    # Optional: a directory of pre-downloaded jars for machines without internet access to Maven
+    ALL_JARS = _list_jars(os.getenv("SPARK_JARS_DIR", ""))
 
     # ========================
-    # DYNAMIC PATHS (ABFSS)
+    # MLFLOW
     # ========================
-    BASE_URL = f"@{STORAGE_ACCOUNT}.dfs.core.windows.net"
+    MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", f"sqlite:///{(PROJECT_ROOT / 'mlflow.db').as_posix()}")
+    MLFLOW_ARTIFACT_DIR = PROJECT_ROOT / "mlruns"
+    MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "driving_style")
+    MODEL_NAME = "driving_style_classifier"
+    # Model served by the cockpit; defaults to the latest registered version
+    MODEL_URI = os.getenv("MODEL_URI", f"models:/{MODEL_NAME}/latest")
 
-    BRONZE_RAW_PATH = f"abfss://{BRONZE_CONTAINER}{BASE_URL}/raw_events"
-    BRONZE_CHECKPOINT = f"abfss://{BRONZE_CONTAINER}{BASE_URL}/checkpoints/bronze_raw"
+    # ========================
+    # SIMULATOR
+    # ========================
+    MAIN_PROFILES_PATH = PROJECT_ROOT / "simulator" / "profiles"
+    DEFAULT_CAR_PROFILE = MAIN_PROFILES_PATH / "cars" / "ford_focus.yaml"
+    DEFAULT_DRIVER_PROFILE = MAIN_PROFILES_PATH / "drivers" / "normal.yaml"
+    WEAR_PROFILE = MAIN_PROFILES_PATH / "worlds" / "realistic_wear.yaml"
+    ENVIRONMENT_PROFILE = MAIN_PROFILES_PATH / "worlds" / "summer.yaml"
 
-    SILVER_STATE_PATH = f"abfss://{SILVER_CONTAINER}{BASE_URL}/vehicle_telemetry"
-    SILVER_QUARANTINE_PATH = f"abfss://{SILVER_CONTAINER}{BASE_URL}/silver_quarantine/vehicle_telemetry"
+    @classmethod
+    def lake_root(cls, container: str) -> str:
+        """Returns the root URI of a lake container for the configured storage mode."""
+        if cls.STORAGE_MODE == "azure":
+            if not cls.STORAGE_ACCOUNT:
+                raise RuntimeError("STORAGE_MODE=azure requires AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY")
+            return f"abfss://{container}@{cls.STORAGE_ACCOUNT}.dfs.core.windows.net"
+        if cls.STORAGE_MODE != "local":
+            raise RuntimeError(f"Unknown STORAGE_MODE '{cls.STORAGE_MODE}' (expected 'local' or 'azure')")
+        return (cls.LOCAL_LAKE_DIR / container).as_uri()
 
-    GOLD_FEATURES_PATH = f"abfss://{GOLD_CONTAINER}{BASE_URL}/telemetry_features"
+    @classmethod
+    def lake_path(cls, container: str, *parts: str) -> str:
+        return "/".join([cls.lake_root(container), *parts])
 
-    ML_DATASETS_BASE_PATH = f"abfss://{ML_CONTAINER}{BASE_URL}/"
-    ML_DATASET_FULL_PATH  = f"{ML_DATASETS_BASE_PATH}full"
-    ML_DATASET_TRAIN_PATH = f"{ML_DATASETS_BASE_PATH}train"
-    ML_DATASET_TEST_PATH  = f"{ML_DATASETS_BASE_PATH}test"
-    ML_DATASET_META_PATH  = f"{ML_DATASETS_BASE_PATH}metadata"
-    ML_TRAINING_METRICS_PATH = f"{ML_DATASETS_BASE_PATH}training/metrics"
 
-    DATA_QUALITY_METRICS_PATH = f"abfss://system{BASE_URL}/data_quality_metrics"
-    MAIN_PROFILES_PATH = "simulator/profiles"
+class LakePaths:
+    """Resolved storage locations of every medallion and ML dataset."""
+
+    BRONZE_RAW_PATH = AppConfig.lake_path(AppConfig.BRONZE_CONTAINER, "raw_events")
+    BRONZE_CHECKPOINT = AppConfig.lake_path(AppConfig.BRONZE_CONTAINER, "checkpoints", "bronze_raw")
+
+    SILVER_STATE_PATH = AppConfig.lake_path(AppConfig.SILVER_CONTAINER, "vehicle_telemetry")
+    SILVER_QUARANTINE_PATH = AppConfig.lake_path(AppConfig.SILVER_CONTAINER, "silver_quarantine", "vehicle_telemetry")
+
+    GOLD_FEATURES_PATH = AppConfig.lake_path(AppConfig.GOLD_CONTAINER, "telemetry_features")
+
+    ML_DATASET_FULL_PATH = AppConfig.lake_path(AppConfig.ML_CONTAINER, "full")
+    ML_DATASET_TRAIN_PATH = AppConfig.lake_path(AppConfig.ML_CONTAINER, "train")
+    ML_DATASET_TEST_PATH = AppConfig.lake_path(AppConfig.ML_CONTAINER, "test")
+
+    DATA_QUALITY_METRICS_PATH = AppConfig.lake_path(AppConfig.SYSTEM_CONTAINER, "data_quality_metrics")

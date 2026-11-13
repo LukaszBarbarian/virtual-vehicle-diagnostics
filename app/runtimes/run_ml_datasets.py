@@ -1,13 +1,16 @@
 import sys
+import traceback
 from pathlib import Path
+
+# Make the project root importable when the script is run directly
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 from infra.spark.spark_session import SparkSessionFactory
 from ml.datasets.ml_dataset_processor import MLDatasetProcessor
 from ml.datasets.ml_split_processor import MLSplitProcessor
 from ml.training.ml_training_processor import MLTrainingProcessor
 
-# Environment configuration
-ROOT = Path(__file__).resolve().parents[1]
-PYTHON_EXEC = sys.executable
 
 def run_ml_workflow(spark):
     """
@@ -16,15 +19,15 @@ def run_ml_workflow(spark):
     """
     
     # 1. Dataset Generation: Flattens Gold Delta tables into ML-ready formats
-    print("\n🚀 Executing MLDatasetProcessor (Flattening & Cleaning)...")
+    print("\n>> Executing MLDatasetProcessor (Flattening & Cleaning)...")
     MLDatasetProcessor(spark).run()
 
     # 2. Data Splitting: Partitioning data by simulation_id to prevent leakage
-    print("\n🚀 Executing MLSplitProcessor (Group-based Train/Test Split)...")
+    print("\n>> Executing MLSplitProcessor (Group-based Train/Test Split)...")
     MLSplitProcessor(spark).run()
 
     # 3. Model Training: Fitting the classifier and logging results to MLflow
-    print("\n🚀 Executing MLTrainingProcessor (Model Fit & Experiment Tracking)...")
+    print("\n>> Executing MLTrainingProcessor (Model Fit & Experiment Tracking)...")
     MLTrainingProcessor(spark).run()
 
 if __name__ == "__main__":
@@ -36,7 +39,8 @@ if __name__ == "__main__":
     
     try:
         run_ml_workflow(spark)
-        print("\n✅ ML PIPELINE COMPLETED: Models and datasets are ready.")
+        print("\nOK: ML PIPELINE COMPLETED: Models and datasets are ready.")
     except Exception as e:
-        print(f"\n❌ ML PIPELINE FAILED: {str(e)}")
+        traceback.print_exc()
+        print(f"\nML PIPELINE FAILED: {str(e)}")
         sys.exit(1)

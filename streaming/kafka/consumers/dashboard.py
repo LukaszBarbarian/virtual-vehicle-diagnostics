@@ -8,16 +8,15 @@ from streaming.kafka.consumers.base import EventHandler
 
 class DashboardStateHandler(EventHandler):
     """
-    Trzyma:
-    - ostatni znany stan
-    - historię RPM + Gear do wykresu
+    Keeps the latest simulation state and a short RPM / gear / speed history
+    for live charts.
     """
 
     def __init__(self, history_size: int = 300):
         self._lock = threading.Lock()
         self._latest_state: Optional[Dict[str, Any]] = None
 
-        # historia do wykresu (np. ~60s przy 5Hz)
+        # Chart history (300 ticks = 30 s at 10 Hz)
         self._history = deque(maxlen=history_size)
 
     def handle(self, event: Dict[str, Any]) -> None:

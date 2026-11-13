@@ -2,7 +2,7 @@ from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 from typing import Tuple
 from pipelines.base.processor import BaseProcessor
-from app.app_config import AppConfig
+from app.app_config import LakePaths
 
 class MLSplitProcessor(BaseProcessor):
     """
@@ -19,7 +19,7 @@ class MLSplitProcessor(BaseProcessor):
         return (
             self.spark.read
             .format("parquet")
-            .load(AppConfig.ML_DATASET_FULL_PATH)
+            .load(LakePaths.ML_DATASET_FULL_PATH)
         )
 
     def transform(self, df: DataFrame) -> DataFrame:
@@ -73,12 +73,12 @@ class MLSplitProcessor(BaseProcessor):
             train_df
             .write
             .mode("overwrite")
-            .parquet(AppConfig.ML_DATASET_TRAIN_PATH)
+            .parquet(LakePaths.ML_DATASET_TRAIN_PATH)
         )
 
         (
             test_df
             .write
             .mode("overwrite")
-            .parquet(AppConfig.ML_DATASET_TEST_PATH)
+            .parquet(LakePaths.ML_DATASET_TEST_PATH)
         )

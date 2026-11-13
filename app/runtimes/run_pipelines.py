@@ -1,12 +1,15 @@
 import sys
+import traceback
 from pathlib import Path
+
+# Make the project root importable when the script is run directly
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 from infra.spark.spark_session import SparkSessionFactory
 from pipelines.processor.silver_processor import SilverProcessor
 from pipelines.processor.gold_processor import GoldProcessor
 
-# Setup environment paths
-ROOT = Path(__file__).resolve().parents[1]
-PYTHON_EXEC = sys.executable
 
 def run_batch_pipeline(spark):
     """
@@ -15,11 +18,11 @@ def run_batch_pipeline(spark):
     """
     
     # 1. Silver Processing: Validate and flatten raw data
-    print("\n🚀 Starting SilverProcessor (Validation & Flattening)...")
+    print("\n>> Starting SilverProcessor (Validation & Flattening)...")
     SilverProcessor(spark).run()
 
     # 2. Gold Processing: Feature engineering and ML labeling
-    print("\n🚀 Starting GoldProcessor (Feature Engineering & Labeling)...")
+    print("\n>> Starting GoldProcessor (Feature Engineering & Labeling)...")
     GoldProcessor(spark).run()
 
 if __name__ == "__main__":
@@ -32,7 +35,8 @@ if __name__ == "__main__":
     
     try:
         run_batch_pipeline(spark)
-        print("\n✅ DATA PIPELINE EXECUTION FINISHED SUCCESSFULLY")
+        print("\nOK: DATA PIPELINE EXECUTION FINISHED SUCCESSFULLY")
     except Exception as e:
-        print(f"\n❌ PIPELINE FAILED: {str(e)}")
+        traceback.print_exc()
+        print(f"\nPIPELINE FAILED: {str(e)}")
         sys.exit(1)

@@ -1,9 +1,9 @@
 from pyspark.sql import functions as F
-from pyspark.sql.types import *
+from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
 from pyspark.sql.window import Window
 from pyspark.sql import DataFrame
 
-from app.app_config import AppConfig
+from app.app_config import LakePaths
 from pipelines.base.processor import BaseProcessor
 
 class SilverProcessor(BaseProcessor):
@@ -20,7 +20,7 @@ class SilverProcessor(BaseProcessor):
         return (
             self.spark.read
             .format("json")
-            .load(AppConfig.BRONZE_RAW_PATH)
+            .load(LakePaths.BRONZE_RAW_PATH)
         )
 
     def process(self, bronze_df: DataFrame) -> DataFrame:
@@ -42,16 +42,17 @@ class SilverProcessor(BaseProcessor):
 
     def write(self, silver_df: DataFrame):
         """
-        Persists validated telemetry data to the Silver Delta table, 
-        partitioned by simulation_id for optimized query performance.
+        Rebuilds the Silver Delta table from the full Bronze history, partitioned by simulation_id.
+        Overwriting (instead of appending) keeps re-runs idempotent.
         """
         (
             silver_df
             .write
             .format("delta")
-            .mode("append")
+            .mode("overwrite")
+            .option("overwriteSchema", "true")
             .partitionBy("simulation_id")
-            .save(AppConfig.SILVER_STATE_PATH)
+            .save(LakePaths.SILVER_STATE_PATH)
         )
 
     def _parse_raw_event(self, bronze_df: DataFrame) -> DataFrame:
@@ -152,11 +153,16 @@ class SilverProcessor(BaseProcessor):
             )
         )
 
-    def _split_valid_quarantine(self, df: DataFrame) -> (DataFrame, DataFrame):
+    def _split_valid_quarantine(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
         """
         Splits the dataset into valid records for the Silver layer and failed records for quarantine.
         """
-        valid_df = df.filter("is_valid = true").drop("is_null_violation", "is_range_violation", "is_logical_violation", "is_valid")
+        valid_df = (
+            df.filter("is_valid = true")
+            .drop("is_null_violation", "is_range_violation", "is_logical_violation", "is_valid")
+            # A tick can reach Bronze more than once (producer retries); keep one row per tick
+            .dropDuplicates(["simulation_id", "step"])
+        )
         quarantine_df = df.filter("is_valid = false")
         return valid_df, quarantine_df
 
@@ -170,7 +176,7 @@ class SilverProcessor(BaseProcessor):
             .format("delta")
             .mode("overwrite")
             .option("overwriteSchema", "true")
-            .save(AppConfig.SILVER_QUARANTINE_PATH)
+            .save(LakePaths.SILVER_QUARANTINE_PATH)
         )
 
     def _write_metrics(self, df: DataFrame):
@@ -188,4 +194,4 @@ class SilverProcessor(BaseProcessor):
             .withColumn("dataset", F.lit("silver_telemetry"))
             .withColumn("check_time", F.current_timestamp())
         )
-        metrics_df.write.format("delta").mode("append").save(AppConfig.DATA_QUALITY_METRICS_PATH)
+        metrics_df.write.format("delta").mode("append").save(LakePaths.DATA_QUALITY_METRICS_PATH)

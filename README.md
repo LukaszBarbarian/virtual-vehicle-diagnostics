@@ -1,180 +1,180 @@
-## 🏎️ Simulator & Model Logic
+# Virtual Vehicle Diagnostics
 
-### 🕹️ Vehicle Simulator (Physics-Based)
-The simulator, built with **PySide6**, does more than just emit data; it mimics a real-world driving environment:
-* **Physics Engine**: Calculates real-time relationships between RPM, Torque, Gear Ratios, and Speed.
-* **Thermal Dynamics**: Simulates engine and brake temperature fluctuations based on load and environmental factors.
-* **Driver Profiles**: Supports multiple profiles (e.g., Aggressive, Eco, Safe) that change how the vehicle is handled.
-* **Event-Driven**: Emits high-frequency telemetry (approx. 10-50Hz) to Kafka, ensuring a realistic stream of "noisy" real-world data.
+An end-to-end streaming data platform built around a physics-based car simulator:
+telemetry is streamed through **Kafka** into a **Spark / Delta Lake medallion architecture**
+(Bronze → Silver → Gold), turned into ML features, used to train a **scikit-learn** model tracked
+in **MLflow**, and scored live back in the driver's cockpit.
 
-<img width="1154" height="824" alt="image" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
+<img width="1154" height="824" alt="Cockpit with live AI coach" src="https://github.com/user-attachments/assets/eb6549da-e544-4fd4-a4d9-fb2158933b54" />
 
+## Architecture
 
----
+```mermaid
+flowchart LR
+    subgraph Cockpit["Cockpit (PySide6)"]
+        UI[Gauges + controls]
+        AI[AI coach<br/>live inference]
+    end
+    SIM[Physics simulator<br/>engine, gearbox, thermals, wear]
+    K[(Kafka)]
+    subgraph Lake["Data lake (local disk or ADLS Gen2)"]
+        B[Bronze<br/>raw JSON events]
+        S[Silver<br/>validated Delta + quarantine]
+        G[Gold<br/>features + label]
+        M[ML datasets<br/>train / test]
+    end
+    ML[MLflow<br/>runs + model registry]
 
-## 🧠 Project Overview
+    UI -- driver.commands --> K -- driver.commands --> SIM
+    SIM -- simulation.raw --> K
+    SIM -- state ticks --> AI
+    K -- Spark Structured Streaming --> B
+    B -- batch --> S --> G --> M --> ML
+    ML -- registered model --> AI
+```
 
-This project simulates vehicle physics and driver behavior in real-time, streaming high-frequency telemetry data through **Kafka** into a **Spark-powered Data Lake**. 
-
-Unlike simple ingestion scripts, this repository implements a full **end-to-end lifecycle**:
-1. **Simulation**: Real-time telemetry (PySide6 UI).
-2. **Ingestion**: Structured Streaming into Bronze (Raw).
-3. **Processing**: Automated transformation through Silver (Cleaned) and Gold (Aggregated) layers.
-4. **Machine Learning**: Automated dataset preparation and model training.
-
-
-
----
-
-## 🏗️ System Architecture
-
-### 📡 Data Flow
-* **Simulation (Producer)**: High-fidelity vehicle model emitting events to Kafka.
-* **Spark Ingestion**: Consumes Kafka topics and writes to **Azure Data Lake Gen2** (Bronze).
-* **Medallion Pipeline**: Orchestrated Spark jobs that promote data from Raw ➡️ Normalized ➡️ Feature sets.
-* **ML Pipeline**: Consumes Gold data to generate train/test splits and train predictive models.
-
-### 🧩 Core Components
-* **`VehicleSimulator`**: Core logic for generating physics-based telemetry.
-* **`KafkaStreamer`**: Handles asynchronous data transmission to Kafka topics.
-* **`SilverProcessor`**: Method `process_raw_to_silver()` performs schema validation, timestamp normalization, and data cleaning.
-* **`GoldProcessor`**: Method `aggregate_telemetry()` calculates rolling averages (RPM, Temp) and creates feature buckets.
-* **`MLTrainingProcessor`**: Method `read()` loads Parquet datasets, while `process()` executes the training logic using Scikit-Learn and MLflow.
-
----
-
-## 🤖 Machine Learning Insights
-
-The pipeline includes an automated training module designed to classify driving styles based on high-frequency telemetry.
-
-* **Model**: `RandomForestClassifier` (Scikit-Learn).
-* **Configuration**: 300 estimators, max depth of 12, and `class_weight='balanced'` to handle minority class distributions without manual weight tuning.
-* **Experiment Tracking**: Fully integrated with **MLflow**. Every run logs:
-    * Accuracy metrics.
-    * Model artifacts (serialized `.pkl`).
-    * Feature importance (analyzing factors like `power_factor` and thermal trends).
-
-<img width="1812" height="455" alt="image" src="https://github.com/user-attachments/assets/1f265cda-ffa3-4f7e-a6da-e57bb9a1007c" />
-
- 
-
-      
-* **Data Handling**: Automated conversion from Spark DataFrames to Pandas for optimized local training after Gold-layer aggregation.
----
-
-## ⚡ Real-Time Inference Engine
-
-The project features a live AI inference system (`AIInferenceEngine`) that evaluates driving behavior every second using a sliding window approach.
-
-### 🧠 How the AI "Thinks"
-Unlike simple rule-based systems, our engine uses a **10-second rolling window** (300 samples at 30Hz) to understand context.
-* **Sliding Window Buffer**: A `deque` collection stores the last 10 seconds of telemetry, allowing the model to analyze trends rather than just momentary spikes.
-* **Feature Extraction**: On every prediction tick, the engine calculates:
-    * **`rpm_std_10s`**: High variability in RPM often indicates aggressive downshifting or erratic acceleration.
-    * **`power_factor`**: A derived metric (RPM × Load) representing the instantaneous stress on the powertrain.
-    * **`throttle_avg_10s`**: Distinguishes between a quick overtake and sustained aggressive throttle usage.
-
-### 🚦 Driving Style Classification
-The engine compares the current driving pattern against the trained **Random Forest** model to output:
-* **`NORMAL`**: Stable RPMs, moderate load, and smooth gear transitions.
-* **`AGGRESSIVE`**: Triggered when the probability of aggressive behavior (e.g., high `load_max_10s` and erratic `rpm_range`) exceeds 50%.
-* **Confidence Score**: The system provides a percentage-based score (e.g., "85% Aggressive") to indicate the model's certainty.
-
-
-
----
-
-## 🧩 Core Components Deep Dive
-
-* **`AIInferenceEngine`**: 
-    * **`add_sample()`**: Feeds real-time data from the PySide6 UI into the buffer.
-    * **`get_prediction()`**: Triggers the feature engineering and MLflow model scoring.
-* **`MLflow Integration`**: Models are loaded directly via `mlflow.sklearn.load_model(model_uri)`, allowing the UI to always use the "latest" or a specifically tagged "production" model version.
-
----
-
-## 🥉 Medallion Layers (Current Status)
-
-| Layer | Purpose | Format |
+| Step | Code | What happens |
 | :--- | :--- | :--- |
-| **Bronze** | Raw Kafka events (Immutable) | Parquet / JSON |
-| **Silver** | Cleaned, validated, and flattened telemetry | Delta / Parquet |
-| **Gold** | Feature-engineered datasets (RPM bins, thermal trends) | Delta / Parquet |
-| **ML** | Train/Test splits and model metrics | Binary / Dataframes |
+| Simulation | `simulator/` | 10 Hz physics loop: torque curve, gear shifts, drag and rolling resistance, coolant/oil temperatures, engine wear. Car, driver and world behaviour come from YAML profiles. |
+| Streaming | `streaming/`, `infra/kafka/` | Every tick is published as a versioned `simulation.raw` event; cockpit inputs travel the other way as `driver.commands`. |
+| Bronze | `pipelines/processor/bronze_processor.py` | Spark Structured Streaming from Kafka, raw events stored as JSON with checkpointing. |
+| Silver | `pipelines/processor/silver_processor.py` | Explicit schema, flattening, null and physical-range checks, de-duplication per tick. Invalid rows go to a quarantine table; data quality counts are appended to a metrics table. |
+| Gold | `pipelines/processor/gold_processor.py` | 10-second rolling features per session and the training label (see below). |
+| ML | `ml/` | Group split by `simulation_id` (no leakage between sessions), Random Forest training, metrics, feature importance and model registration in MLflow. |
+| Live inference | `ml/inference/inference_processor.py` | The cockpit keeps the last 10 seconds of ticks and scores them with the registered model every second. |
 
----
+## The ML problem
 
-## ▶️ How to Run
+**Question:** *will the next 10 seconds of driving wear the engine noticeably faster than usual?*
 
-### 0️⃣ Prerequisites
-* Python 3.12+
-* Apache Kafka (running locally at `localhost:9092`)
-* Spark 3.x installed with Azure/Hadoop JARS
-* Active Azure Storage Account
+- **Features** (past 10 s, `ml/datasets/feature_config.py`): average / std / range of RPM, average throttle,
+  average and max engine load, power factor (RPM × load), speed and gear.
+- **Label:** engine wear accumulated over the *next* 10 s. Ticks above the 75th percentile of that wear rate are
+  `AGGRESSIVE`, the rest `NORMAL`.
+- **Train/serve parity:** the Gold layer (Spark window functions) and the live engine (pandas) compute the
+  features from one shared definition, and a test checks that both produce identical values.
+- **Evaluation:** besides accuracy, every run logs a majority-class baseline, F1 for `AGGRESSIVE` and ROC-AUC.
+  With a 25 % positive class, "always NORMAL" already scores ~75 % accuracy, so accuracy alone says little.
 
-### 1️⃣ Simulation & UI
-Start the vehicle cockpit to begin streaming telemetry:
+<img width="1812" height="455" alt="MLflow runs" src="https://github.com/user-attachments/assets/1f265cda-ffa3-4f7e-a6da-e57bb9a1007c" />
+
+### Results
+
+12 generated sessions (eco / normal / sport, Ford Focus and Lamborghini, 3 simulated minutes each),
+split by session into 14 400 training and 4 800 test rows:
+
+| Metric | Model | Baseline (always `NORMAL`) |
+| :--- | ---: | ---: |
+| Accuracy | 0.78 | 0.75 |
+| F1 `AGGRESSIVE` | 0.46 | 0.00 |
+| ROC-AUC | 0.80 | 0.50 |
+
+The model ranks risky driving well (ROC-AUC 0.80) but only modestly beats the baseline on accuracy. Most
+important features: peak engine load, average throttle and power factor. See *Known limitations* for why.
+
+## Run it locally
+
+Everything runs on one machine; Azure is optional.
+
+**Prerequisites:** Python 3.12, Java 17 or 21 (for Spark 3.5), Docker (for Kafka).
+On Windows, Spark also needs `winutils.exe` and `hadoop.dll` in `%HADOOP_HOME%\bin`.
 
 ```bash
-python ui2/main_window.py
+# 1. Kafka + Kafka UI (http://localhost:8080)
+docker compose -f infra/kafka/docker-compose.yml up -d
+
+# 2. Python environment
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env               # optional, defaults are local
+
+# 3. Produce telemetry: drive the cockpit yourself...
+python app/runtimes/main.py
+#    ...or generate a batch of eco / normal / sport sessions headless
+python app/runtimes/generate_sessions.py --sessions 12 --minutes 3
+
+# 4. Bronze -> Silver -> Gold
+python app/runtimes/run_pipelines.py
+
+# 5. Gold -> train/test -> model (registered in MLflow as driving_style_classifier)
+python app/runtimes/run_ml_datasets.py
+mlflow ui --backend-store-uri sqlite:///mlflow.db   # browse runs at http://localhost:5000
+
+# 6. Start the cockpit again: the AI coach now loads the latest registered model
+python app/runtimes/main.py
 ```
 
-### 2️⃣ Run Data Pipelines (Silver → Gold)
-To process raw data into analytics-ready tables:
+**Cockpit controls:** mouse wheel = throttle, Shift + mouse wheel = brake. The car and driver profile are chosen
+before pressing START. Without a trained model the cockpit still runs; only the AI coach is disabled.
+
+The first Spark start downloads the Delta and Kafka connectors from Maven
+(set `SPARK_JARS_DIR` to use pre-downloaded jars instead). Data lands in `./data/lake/<layer>`.
+
+### Configuration
+
+All settings live in `app/app_config.py` and can be overridden with environment variables or `.env`:
+
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `KAFKA_BROKERS` | `localhost:9092` | Kafka bootstrap servers |
+| `STORAGE_MODE` | `local` | `local` (writes to `LOCAL_LAKE_DIR`) or `azure` (ADLS Gen2 over `abfss://`) |
+| `LOCAL_LAKE_DIR` | `./data/lake` | Root of the local data lake |
+| `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY` | – | Required with `STORAGE_MODE=azure` |
+| `SPARK_MASTER` | `local[*]` | Spark master URL |
+| `MLFLOW_TRACKING_URI` | `sqlite:///mlflow.db` | MLflow tracking store |
+| `MODEL_URI` | `models:/driving_style_classifier/latest` | Model served by the cockpit |
+| `VVD_DEBUG` | – | `1` prints every simulation tick |
+
+## Tests
 
 ```bash
-# This triggers SilverProcessor and GoldProcessor sequentially
-python pipelines/run_pipelines.py
+pytest
 ```
 
-### 3️⃣ Run ML Pipeline
-To prepare datasets and train models:
+- `tests/test_simulation.py` – every car profile drives, ticks are consecutive immutable snapshots, wear never decreases, telemetry stays within the Silver quality ranges.
+- `tests/test_inference.py` – live feature computation and the warm-up window.
+- `tests/test_spark_pipeline.py` – Bronze JSON → Silver → Gold on a simulated session: de-duplication, quarantine, both label classes, and **feature parity between Gold and live inference** (skipped without Java).
 
-```bash
-# This triggers MLDatasetProcessor, MLSplitProcessor, and MLTrainingProcessor
-python ml/run_ml_training.py
+## Project structure
+
+```
+app/            configuration and entry points (cockpit, data generator, pipelines, ML)
+infra/          Kafka client + docker-compose, Spark session factory
+simulator/      physics modules, profile loaders, simulation loop, YAML profiles
+streaming/      event models, Kafka producers and consumers
+pipelines/      Bronze / Silver / Gold processors (template-method base class)
+ml/             feature config, dataset + split processors, training, MLflow setup, live inference
+ui2/            PySide6 cockpit and widgets
+tests/          pytest suite
 ```
 
----
+## Design notes
 
-## 🔒 Security & Configuration (Refactoring Note)
+- **Separation of concerns:** the simulator knows nothing about Kafka or Spark; it publishes ticks on an in-process state bus, and adapters forward them.
+- **Template method:** every batch step is a `BaseProcessor` (`read → transform → process → write`), so pipelines read the same way.
+- **Idempotent batch layers:** Silver and Gold are rebuilt from the layer below with `overwrite`, so re-running a pipeline never duplicates data. Bronze is append-only with a streaming checkpoint.
+- **Data quality as data:** rejected rows are kept in quarantine and quality counts are stored per run, instead of being dropped silently.
+- **Thread safety:** the physics loop runs on its own thread and hands ticks to the Qt GUI thread through signals.
 
-The project follows production-ready security patterns:
-* **Credential Isolation**: Secrets are never hardcoded; they are managed via `python-dotenv`.
-* **Dynamic Configuration**: The `AppConfig` class builds `abfss` storage paths dynamically based on environment variables.
-* **Refactoring Path**: Designed for easy migration to **Azure Key Vault**.
+## Known limitations
 
----
+- **The label describes engine wear, not driving style directly.** In the wear model, load on a cold engine
+  (oil below 95 °C) is the largest source of wear, and oil temperature is not a feature, so part of the
+  `AGGRESSIVE` label is "the engine was still cold". Adding thermal features, or labelling from the driver
+  profile, would make the model closer to a driving-style classifier.
+- **Relative threshold:** the label is the top 25 % of wear rates in the whole dataset, so the share of
+  `AGGRESSIVE` ticks is fixed by construction rather than by an absolute wear limit.
+- The cockpit's AI coach and the Spark ingestion run in the same process as the UI; in production they would be separate services.
 
-## 🧱 Design Principles
-* **Separation of Concerns**: Simulation logic is entirely decoupled from the data engineering stack.
-* **Idempotency**: Processing jobs can be re-run without duplicating data in the Lake.
-* **Production-like Setup**: Uses `abfss` protocol and Spark Session Factories instead of local file system mocks.
+## Roadmap
 
----
+- Analytics dashboard (Streamlit) over Silver/Gold: session replay, model quality, data quality metrics.
+- Data quality rules with Great Expectations as the gate between Bronze and Silver.
+- Thermal features and a per-driver evaluation of the classifier.
+- CI: run the pytest suite (including the Spark tests) on every push.
 
-## 📌 Tech Stack
-* **Languages**: Python
-* **ML Library**: Scikit-Learn & MLflow
-* **GUI**: PySide6 (Qt)
-* **Streaming**: Apache Kafka
-* **Processing**: Apache Spark (Structured Streaming & Batch)
-* **Cloud**: Azure Data Lake Gen2
-* **Data Format**: Parquet / Delta Lake
+## Tech stack
 
----
-
-## 🚀 Future Roadmap: Great Expectations
-To ensure high data quality, the next step is integrating **Great Expectations**.
-
-### What is Great Expectations?
-It is a leading tool for **Data Quality (DQ)**. Instead of just checking if a pipeline "runs", it validates if the data itself is correct:
-* **Unit tests for data**: Defines "Expectations" (e.g., *RPM value must be between 0 and 8000*).
-* **Automated Documentation**: Generates clean reports (Data Docs) showing which data passed or failed.
-* **Silver Layer Guard**: It will act as a gatekeeper between Bronze and Silver to prevent "garbage" data from polluting the Lake.
-
-
-👋 **Author**
-Built as a professional portfolio project focusing on high-load data engineering patterns, clean architecture, and ML integration.
-
-
+Python 3.12 · PySide6 · Apache Kafka · Apache Spark 3.5 (Structured Streaming + batch) · Delta Lake ·
+Azure Data Lake Gen2 (optional) · scikit-learn · MLflow · pytest · Docker

@@ -10,6 +10,6 @@ class DriverProfileLoader:
         """
         Parses a driver configuration file and returns a structured DriverSpecification object.
         """
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = yaml.safe_load(f)
         return DriverSpecification(**d)
